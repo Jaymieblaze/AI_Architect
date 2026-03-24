@@ -20,11 +20,17 @@ Frontend Displays Result + Gallery
 
 - **Natural Language Input**: Describe architectural concepts in plain English
 - **AI-Powered Generation**: Leverages Krea AI for high-quality architectural renders
-- **Async Job Processing**: Non-blocking generation with real-time status polling
+- **Async Job Processing**: Non-blocking generation with real-time status polling (5-minute timeout, 3-retry logic)
+- **Generation History**: Collapsible sidebar showing 10 most recent concepts with thumbnails
+- **Quick Reload**: Click any history item to instantly reload previous concepts
 - **Persistent Gallery**: Auto-saves all generated concepts to Supabase
 - **Grid View**: Browse your concept collection in a responsive gallery
+- **Download & Export**: Save high-resolution images locally
+- **Keyboard Shortcuts**: Ctrl/Cmd + Enter to generate
+- **Input Validation**: Smart character limits (10-500 chars) with live counter
+- **Error Handling**: Graceful degradation with user-friendly error messages
 - **Modern UI**: Clean, minimalist interface with Tailwind CSS
-- **Type-Safe**: Full TypeScript implementation
+- **Type-Safe**: Full TypeScript implementation with strict mode
 
 ## 🚀 Quick Start
 
@@ -176,6 +182,12 @@ npm run lint
 4. Wait for AI processing (20-60 seconds)
 5. View your generated visualization
 6. Download the image or generate another
+
+### Generation History
+- **Automatic**: The right sidebar shows your 10 most recent concepts
+- **Quick Access**: Click any thumbnail to reload that concept
+- **Collapsible**: Toggle the sidebar to maximize workspace
+- **Auto-Refresh**: Updates automatically when new concepts are saved
 
 ### Browse Gallery
 1. Click "Gallery" button in the top-right
