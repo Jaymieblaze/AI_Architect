@@ -2,12 +2,16 @@
  * API type definitions for AI Architect
  */
 
+import type { AngleType, AngleImage } from './database';
+
 /**
  * Response from the /api/generate endpoint
- * Contains the job ID for polling status
+ * Contains single job ID or multiple job IDs for multi-angle
  */
 export interface GenerateResponse {
-  job_id: string;
+  job_id?: string; // Legacy: single image
+  job_ids?: Array<{ angle: AngleType; job_id: string }>; // Multi-angle
+  mode: 'single' | 'multi-angle';
 }
 
 /**
@@ -15,6 +19,7 @@ export interface GenerateResponse {
  */
 export interface GenerateRequest {
   user_prompt: string;
+ mode?: 'single' | 'multi-angle'; // Optional: defaults to 'single'
 }
 
 /**
@@ -24,6 +29,15 @@ export interface GenerateRequest {
 export interface PollResponse {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   image_url: string | null;
+  angle?: AngleType; // For multi-angle polling
+}
+
+/**
+ * Multi-angle poll response
+ */
+export interface MultiAnglePollResponse {
+  images: AngleImage[];
+  overall_status: 'pending' | 'processing' | 'partial' | 'completed' | 'failed';
 }
 
 /**

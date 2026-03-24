@@ -240,10 +240,10 @@ export default function ConceptArchitect() {
 
   const loadFromHistory = (concept: Concept) => {
     setPrompt(concept.prompt);
-    setImageUrl(concept.image_url);
+    setImageUrl(concept.image_url || null);
     setStatus('complete');
     setErrorMessage(null);
-    currentJobIdRef.current = concept.job_id;
+    currentJobIdRef.current = concept.job_id || null;
     currentPromptRef.current = concept.prompt;
   };
 
@@ -364,7 +364,7 @@ export default function ConceptArchitect() {
             )}
             <button
               onClick={() => setShowHistory(!showHistory)}
-              className="p-2 hover:bg-neutral-700 rounded-lg transition-all text-neutral-400 hover:text-neutral-200 flex-shrink-0"
+              className="p-2 hover:bg-neutral-700 rounded-lg transition-all text-neutral-400 hover:text-neutral-200 shrink-0"
               title={showHistory ? 'Collapse History' : 'Expand History'}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -392,7 +392,7 @@ export default function ConceptArchitect() {
                     {/* Thumbnail */}
                     <div className="aspect-video w-full rounded overflow-hidden mb-2 bg-neutral-800">
                       <img 
-                        src={concept.image_url} 
+                        src={concept.image_url || ''} 
                         alt={concept.prompt}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />

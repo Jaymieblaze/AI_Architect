@@ -4,8 +4,9 @@ CREATE TABLE concepts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   prompt TEXT NOT NULL,
-  image_url TEXT NOT NULL,
-  job_id TEXT NOT NULL,
+  image_url TEXT, -- Legacy: single image support (nullable for multi-angle)
+  job_id TEXT, -- Legacy: single job ID (nullable for multi-angle)
+  images JSONB, -- Multi-angle images: [{ angle, url, job_id }]
   status TEXT NOT NULL DEFAULT 'completed',
   metadata JSONB DEFAULT '{}'::jsonb
 );
@@ -22,6 +23,7 @@ CREATE INDEX idx_concepts_job_id ON concepts(job_id);
 
 COMMENT ON TABLE concepts IS 'Stores AI-generated architectural concept images and prompts';
 COMMENT ON COLUMN concepts.prompt IS 'User prompt that generated this concept';
-COMMENT ON COLUMN concepts.image_url IS 'URL to the generated image (from Krea AI)';
-COMMENT ON COLUMN concepts.job_id IS 'Krea AI job ID for tracking';
+COMMENT ON COLUMN concepts.image_url IS 'Legacy: URL to single generated image (nullable for multi-angle)';
+COMMENT ON COLUMN concepts.job_id IS 'Legacy: Krea AI job ID for single image (nullable for multi-angle)';
+COMMENT ON COLUMN concepts.images IS 'Multi-angle images: array of { angle, url, job_id, status }';
 COMMENT ON COLUMN concepts.metadata IS 'Additional data: generation time, settings, etc.';

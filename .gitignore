@@ -21,3 +21,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local development notes (not for GitHub)
+LOCAL_SETUP.md
+DEVELOPMENT.md
+NOTES.md

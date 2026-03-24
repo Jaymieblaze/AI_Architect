@@ -2,25 +2,41 @@
  * Database types for Supabase
  */
 
+export type AngleType = 'exterior' | 'interior' | 'aerial' | 'detail';
+
+export interface AngleImage {
+  angle: AngleType;
+  url: string;
+  job_id: string;
+  status: 'pending' | 'generating' | 'completed' | 'failed';
+}
+
 export interface Concept {
-  id: string;
+ id: string;
   created_at: string;
   prompt: string;
-  image_url: string;
-  job_id: string;
-  status: 'completed' | 'failed';
+  // Legacy single-image fields (nullable)
+  image_url?: string | null;
+  job_id?: string | null;
+  // New multi-angle field
+  images?: AngleImage[] | null;
+  status: 'completed' | 'failed' | 'partial';
   metadata?: {
     generation_time_ms?: number;
     user_agent?: string;
+    mode?: 'single' | 'multi-angle';
     [key: string]: unknown;
   };
 }
 
 export interface ConceptInsert {
   prompt: string;
-  image_url: string;
-  job_id: string;
-  status?: 'completed' | 'failed';
+  // Legacy single-image (optional)
+  image_url?: string;
+  job_id?: string;
+  // New multi-angle (optional)
+  images?: AngleImage[];
+  status?: 'completed' | 'failed' | 'partial';
   metadata?: Concept['metadata'];
 }
 
