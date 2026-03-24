@@ -42,3 +42,20 @@ export interface KreaJobResponse {
     urls?: string[];
   };
 }
+
+/**
+ * Gallery API response
+ */
+export interface GalleryResponse {
+  concepts: Array<{
+    id: string;
+    created_at: string;
+    prompt: string;
+    image_url: string;
+    job_id: string;
+    status: string;
+  }>;
+  total: number;
+  limit: number;
+  offset: number;
+}

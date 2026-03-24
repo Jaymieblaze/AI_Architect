@@ -10,8 +10,10 @@ Frontend (Next.js 16 + React 19)
 n8n Workflow Orchestration
     ↓ API Call
 Krea AI Image Generation
-    ↓ Polling
-Frontend Displays Result
+    ↓ Polling & Save
+Supabase Database (Gallery)
+    ↑
+Frontend Displays Result + Gallery
 ```
 
 ## ✨ Features
@@ -19,6 +21,8 @@ Frontend Displays Result
 - **Natural Language Input**: Describe architectural concepts in plain English
 - **AI-Powered Generation**: Leverages Krea AI for high-quality architectural renders
 - **Async Job Processing**: Non-blocking generation with real-time status polling
+- **Persistent Gallery**: Auto-saves all generated concepts to Supabase
+- **Grid View**: Browse your concept collection in a responsive gallery
 - **Modern UI**: Clean, minimalist interface with Tailwind CSS
 - **Type-Safe**: Full TypeScript implementation
 
@@ -29,37 +33,49 @@ Frontend Displays Result
 - Node.js 20+
 - n8n instance (local or cloud)
 - Krea AI API key
+- Supabase account (free tier available)
 
 ### Installation
 
 1. **Clone and install dependencies**
 ```bash
-cd AI_Architect
-cd frontend
+cd AI_Architect/frontend
 npm install
 ```
 
-2. **Configure environment variables**
-```bash
-# Root directory
-cp .env.example .env.local
+2. **Set up Supabase**
 
-# Frontend directory
+a. Create a new project at [supabase.com](https://supabase.com)
+
+b. Run the database schema:
+   - Go to SQL Editor in Supabase dashboard
+   - Copy contents of `database/schema.sql`
+   - Execute the SQL
+
+c. Get your credentials from Project Settings → API:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+
+3. **Configure environment variables**
+
+```bash
 cd frontend
 cp .env.example .env.local
 ```
 
-3. **Set up your API keys**
-
-Edit both `.env.local` files:
+Edit `frontend/.env.local`:
 ```env
-# Root .env.local (for n8nac CLI)
-N8N_HOST=http://localhost:5678
-N8N_API_KEY=your_n8n_api_key_here
-
-# frontend/.env.local
+# Krea AI
 KREA_API_KEY=your_krea_api_key_here
+
+# n8n Webhook
 N8N_WEBHOOK_URL=http://localhost:5678/webhook/generate-concept
+
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```
 
 4. **Start n8n** (if running locally)
@@ -94,12 +110,23 @@ AI_Architect/
 │   ├── app/
 │   │   ├── api/
 │   │   │   ├── generate/    # Trigger n8n workflow
-│   │   │   └── poll/        # Poll Krea AI status
+│   │   │   ├── poll/        # Poll Krea AI status
+│   │   │   └── gallery/     # Gallery CRUD operations
+│   │   ├── gallery/         # Gallery page
 │   │   ├── layout.tsx
 │   │   └── page.tsx
 │   ├── components/
-│   │   └── ConceptArchitect.tsx
+│   │   ├── ConceptArchitect.tsx  # Main generator UI
+│   │   ├── Gallery.tsx           # Gallery grid view
+│   │   └── ErrorBoundary.tsx     # Error handling
+│   ├── lib/
+│   │   └── supabase/        # Supabase client utilities
+│   ├── types/
+│   │   ├── api.ts           # API type definitions
+│   │   └── database.ts      # Database schema types
 │   └── package.json
+├── database/
+│   └── schema.sql           # Supabase database schema
 ├── workflows/                # n8n workflow definitions
 │   └── local_5678_kehinde_a/
 └── n8nac-config.json        # n8n-as-code configuration
@@ -142,10 +169,21 @@ npm run lint
 
 ## 📝 Usage
 
-1. Enter an architectural concept description (e.g., "a minimalist tropical resort with timber cladding and infinity pools")
-2. Click "Generate Concept"
-3. Wait for the AI to process your request (20-60 seconds)
-4. View your generated architectural visualization
+### Generate a Concept
+1. Navigate to [http://localhost:3000](http://localhost:3000)
+2. Enter an architectural concept description (e.g., "a minimalist tropical resort with timber cladding and infinity pools")
+3. Click "Generate Concept" (or press Ctrl/Cmd + Enter)
+4. Wait for AI processing (20-60 seconds)
+5. View your generated visualization
+6. Download the image or generate another
+
+### Browse Gallery
+1. Click "Gallery" button in the top-right
+2. View all your generated concepts in a grid layout
+3. Click any concept to view fullscreen
+4. Download or delete concepts as needed
+
+All generated concepts are automatically saved to your Supabase database!
 
 ## 🔐 Security Notes
 
