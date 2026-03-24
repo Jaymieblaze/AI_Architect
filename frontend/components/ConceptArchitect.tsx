@@ -64,15 +64,41 @@ export default function ConceptArchitect() {
         throw new Error("Backend failed to respond");
       }
       
-      const data = await response.json() as GenerateResponse;
+      const rawData = await response.json();
+      console.log("Raw response from n8n:", rawData);
 
-      if (!data.job_id) {
-        throw new Error(`No job ID returned. Received: ${JSON.stringify(data)}`);
+      // Safely extract the job_id - n8n may wrap it in a stringified data field
+      let job_id: string | null = null;
+      
+      if (typeof rawData === 'object' && rawData !== null) {
+        // Direct access
+        if ('job_id' in rawData && typeof rawData.job_id === 'string') {
+          job_id = rawData.job_id;
+        }
+        // Nested in stringified data field (n8n webhook pattern)
+        else if ('data' in rawData && typeof rawData.data === 'string') {
+          try {
+            const parsed = JSON.parse(rawData.data);
+            if (parsed.job_id && typeof parsed.job_id === 'string') {
+              job_id = parsed.job_id;
+            }
+          } catch (e) {
+            console.error('Failed to parse nested data:', e);
+          }
+        }
+        // Array response
+        else if (Array.isArray(rawData) && rawData.length > 0 && rawData[0]?.job_id) {
+          job_id = rawData[0].job_id;
+        }
+      }
+
+      if (!job_id) {
+        throw new Error(`No job ID returned. Received: ${JSON.stringify(rawData)}`);
       }
 
       // Start the Polling Loop
       pollStartTimeRef.current = Date.now();
-      pollStatus(data.job_id);
+      pollStatus(job_id);
 
     } catch (error) {
       console.error("Failed to start generation", error);
