@@ -152,16 +152,28 @@ export default function ConceptArchitect() {
         // 3. Use exterior image as reference for the other 3 angles
         
         console.log('Generating exterior view first...');
+        
+        // TEMPORARY: Only send user_prompt until n8n workflow is updated
+        // TODO: Remove this flag after updating n8n workflow (see N8N_WORKFLOW_UPDATE.md)
+        const useAdvancedFeatures = false; // Set to true after updating n8n
+        
+        const exteriorRequestBody: any = { 
+          user_prompt: anglePrompts['exterior']
+        };
+        
+        if (useAdvancedFeatures) {
+          exteriorRequestBody.seed = generationSeed;
+        }
+        
         const exteriorResponse = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            user_prompt: anglePrompts['exterior'],
-            seed: generationSeed 
-          }),
+          body: JSON.stringify(exteriorRequestBody),
         });
         
         if (!exteriorResponse.ok) {
+          const errorText = await exteriorResponse.text();
+          console.error('Exterior generation failed:', errorText);
           throw new Error('Failed to generate exterior view');
         }
         
@@ -190,13 +202,17 @@ export default function ConceptArchitect() {
           try {
             const requestBody: any = {
               user_prompt: anglePrompts[angle],
-              seed: generationSeed,
             };
             
-            // If we have exterior URL, use it as reference for img2img
-            if (exteriorUrl) {
-              requestBody.imageUrls = [exteriorUrl];
-              console.log(`Generating ${angle} with exterior reference`);
+            // Only add advanced features if n8n workflow supports them
+            if (useAdvancedFeatures) {
+              requestBody.seed = generationSeed;
+              
+              // If we have exterior URL, use it as reference for img2img
+              if (exteriorUrl) {
+                requestBody.imageUrls = [exteriorUrl];
+                console.log(`Generating ${angle} with seed + exterior reference`);
+              }
             }
             
             const response = await fetch('/api/generate', {
@@ -206,6 +222,8 @@ export default function ConceptArchitect() {
             });
             
             if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`${angle} generation failed:`, errorText);
               throw new Error(`Failed to generate ${angle} view`);
             }
             
