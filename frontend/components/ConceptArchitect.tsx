@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { GenerateResponse, PollResponse } from '@/types/api';
-import type { Concept } from '@/types/database';
+import type { Concept, AngleImage, AngleType } from '@/types/database';
+import { generateAnglePrompts, getAngleLoadingMessage, getAngleDisplayName, ANGLE_TYPES } from '@/types/angleGeneration';
 
 const LOADING_PHRASES = [
   "Drafting conceptual geometry...",
@@ -21,7 +22,14 @@ const MAX_PROMPT_LENGTH = 500;
 export default function ConceptArchitect() {
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState<'idle' | 'generating' | 'complete' | 'error'>('idle');
+  const [generationMode, setGenerationMode] = useState<'single' | 'multi-angle'>('single');
+  
+  // Single image state
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  
+  // Multi-angle state
+  const [angleImages, setAngleImages] = useState<AngleImage[]>([]);
+  
   const [loadingText, setLoadingText] = useState(LOADING_PHRASES[0]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<Concept[]>([]);
@@ -31,6 +39,10 @@ export default function ConceptArchitect() {
   const retryCountRef = useRef<number>(0);
   const currentJobIdRef = useRef<string | null>(null);
   const currentPromptRef = useRef<string>('');
+  
+  // Multi-angle polling refs
+  const angleJobIdsRef = useRef<Map<AngleType, string>>(new Map());
+  const anglePollIntervalsRef = useRef<Map<AngleType, NodeJS.Timeout>>(new Map());
 
   useEffect(() => {
     if (status !== 'generating') return;
@@ -55,62 +67,144 @@ export default function ConceptArchitect() {
 
     setStatus('generating');
     setImageUrl(null);
+    setAngleImages([]);
     setErrorMessage(null);
     retryCountRef.current = 0;
+    currentPromptRef.current = prompt;
+    pollStartTimeRef.current = Date.now();
 
-    try {
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_prompt: prompt }),
-      });
-      
-      if (!response.ok) {
-        throw new Error("Backend failed to respond");
-      }
-      
-      const rawData = await response.json();
-      console.log("Raw response from n8n:", rawData);
-
-      // Safely extract the job_id - n8n may wrap it in a stringified data field
-      let job_id: string | null = null;
-      
-      if (typeof rawData === 'object' && rawData !== null) {
-        // Direct access
-        if ('job_id' in rawData && typeof rawData.job_id === 'string') {
-          job_id = rawData.job_id;
+    if (generationMode === 'single') {
+      // Single image generation (existing logic)
+      try {
+        const response = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_prompt: prompt }),
+        });
+        
+        if (!response.ok) {
+          throw new Error("Backend failed to respond");
         }
-        // Nested in stringified data field (n8n webhook pattern)
-        else if ('data' in rawData && typeof rawData.data === 'string') {
-          try {
-            const parsed = JSON.parse(rawData.data);
-            if (parsed.job_id && typeof parsed.job_id === 'string') {
-              job_id = parsed.job_id;
+        
+        const rawData = await response.json();
+        console.log("Raw response from n8n:", rawData);
+
+        // Safely extract the job_id - n8n may wrap it in a stringified data field
+        let job_id: string | null = null;
+        
+        if (typeof rawData === 'object' && rawData !== null) {
+          // Direct access
+          if ('job_id' in rawData && typeof rawData.job_id === 'string') {
+            job_id = rawData.job_id;
+          }
+          // Nested in stringified data field (n8n webhook pattern)
+          else if ('data' in rawData && typeof rawData.data === 'string') {
+            try {
+              const parsed = JSON.parse(rawData.data);
+              if (parsed.job_id && typeof parsed.job_id === 'string') {
+                job_id = parsed.job_id;
+              }
+            } catch (e) {
+              console.error('Failed to parse nested data:', e);
             }
-          } catch (e) {
-            console.error('Failed to parse nested data:', e);
+          }
+          // Array response
+          else if (Array.isArray(rawData) && rawData.length > 0 && rawData[0]?.job_id) {
+            job_id = rawData[0].job_id;
           }
         }
-        // Array response
-        else if (Array.isArray(rawData) && rawData.length > 0 && rawData[0]?.job_id) {
-          job_id = rawData[0].job_id;
+
+        if (!job_id) {
+          throw new Error(`No job ID returned. Received: ${JSON.stringify(rawData)}`);
         }
+
+        // Start the Polling Loop
+        currentJobIdRef.current = job_id;
+        pollStatus(job_id);
+
+      } catch (error) {
+        console.error("Failed to start generation", error);
+        setStatus('error');
+        setErrorMessage("Failed to connect to the Architect Agent. Please try again.");
       }
-
-      if (!job_id) {
-        throw new Error(`No job ID returned. Received: ${JSON.stringify(rawData)}`);
+    } else {
+      // Multi-angle generation
+      try {
+        const anglePrompts = generateAnglePrompts(prompt);
+        console.log("Generated angle prompts:", anglePrompts);
+        
+        // Initialize angle images array
+        const initialAngles: AngleImage[] = ANGLE_TYPES.map(angle => ({
+          angle,
+          url: '',
+          job_id: '',
+          status: 'pending' as const,
+        }));
+        setAngleImages(initialAngles);
+        
+        // Trigger generation for all 4 angles in parallel
+        const generationPromises = ANGLE_TYPES.map(async (angle) => {
+          try {
+            const response = await fetch('/api/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ user_prompt: anglePrompts[angle] }),
+            });
+            
+            if (!response.ok) {
+              throw new Error(`Failed to generate ${angle} view`);
+            }
+            
+            const rawData = await response.json();
+            
+            // Extract job_id (same logic as single mode)
+            let job_id: string | null = null;
+            
+            if (typeof rawData === 'object' && rawData !== null) {
+              if ('job_id' in rawData && typeof rawData.job_id === 'string') {
+                job_id = rawData.job_id;
+              } else if ('data' in rawData && typeof rawData.data === 'string') {
+                try {
+                  const parsed = JSON.parse(rawData.data);
+                  if (parsed.job_id && typeof parsed.job_id === 'string') {
+                    job_id = parsed.job_id;
+                  }
+                } catch (e) {
+                  console.error('Failed to parse nested data:', e);
+                }
+              } else if (Array.isArray(rawData) && rawData.length > 0 && rawData[0]?.job_id) {
+                job_id = rawData[0].job_id;
+              }
+            }
+            
+            if (!job_id) {
+              throw new Error(`No job ID for ${angle} view`);
+            }
+            
+            console.log(`${angle} job_id:`, job_id);
+            angleJobIdsRef.current.set(angle, job_id);
+            
+            // Start polling for this angle
+            pollAngleStatus(angle, job_id);
+            
+            return { angle, job_id };
+          } catch (error) {
+            console.error(`Failed to start ${angle} generation:`, error);
+            // Update this angle to failed
+            setAngleImages(prev => prev.map(img => 
+              img.angle === angle ? { ...img, status: 'failed' as const } : img
+            ));
+            return { angle, job_id: null };
+          }
+        });
+        
+        await Promise.all(generationPromises);
+        
+      } catch (error) {
+        console.error("Failed to start multi-angle generation", error);
+        setStatus('error');
+        setErrorMessage("Failed to connect to the Architect Agent. Please try again.");
       }
-
-      // Start the Polling Loop
-      pollStartTimeRef.current = Date.now();
-      currentJobIdRef.current = job_id;
-      currentPromptRef.current = prompt;
-      pollStatus(job_id);
-
-    } catch (error) {
-      console.error("Failed to start generation", error);
-      setStatus('error');
-      setErrorMessage("Failed to connect to the Architect Agent. Please try again.");
     }
   };
 
@@ -172,12 +266,130 @@ export default function ConceptArchitect() {
     pollIntervalRef.current = setInterval(poll, POLL_INTERVAL);
   };
 
+  const pollAngleStatus = async (angle: AngleType, jobId: string) => {
+    const poll = async () => {
+      // Check timeout
+      if (Date.now() - pollStartTimeRef.current > MAX_POLL_DURATION) {
+        const interval = anglePollIntervalsRef.current.get(angle);
+        if (interval) clearInterval(interval);
+        
+        // Mark this angle as failed
+        setAngleImages(prev => prev.map(img => 
+          img.angle === angle ? { ...img, status: 'failed' as const } : img
+        ));
+        
+        // Check if all angles are done
+        checkAllAnglesComplete();
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/poll?jobId=${jobId}`);
+        
+        if (!response.ok) {
+          throw new Error(`Poll failed with status ${response.status}`);
+        }
+
+        const text = await response.text();
+        if (!text) {
+          console.warn(`Empty response for ${angle}, skipping...`);
+          return;
+        }
+
+        const data = JSON.parse(text) as PollResponse;
+
+        if (data.status === 'completed') {
+          const interval = anglePollIntervalsRef.current.get(angle);
+          if (interval) {
+            clearInterval(interval);
+            anglePollIntervalsRef.current.delete(angle);
+          }
+          
+          // Only update if we have a valid image URL
+          if (data.image_url) {
+            setAngleImages(prev => prev.map(img => 
+              img.angle === angle 
+                ? { ...img, url: data.image_url as string, status: 'completed' as const } 
+                : img
+            ));
+          } else {
+            // Mark as failed if no URL
+            setAngleImages(prev => prev.map(img => 
+              img.angle === angle ? { ...img, status: 'failed' as const } : img
+            ));
+          }
+          
+          // Check if all angles are done
+          checkAllAnglesComplete();
+          
+        } else if (data.status === 'failed') {
+          const interval = anglePollIntervalsRef.current.get(angle);
+          if (interval) {
+            clearInterval(interval);
+            anglePollIntervalsRef.current.delete(angle);
+          }
+          
+          setAngleImages(prev => prev.map(img => 
+            img.angle === angle ? { ...img, status: 'failed' as const } : img
+          ));
+          
+          checkAllAnglesComplete();
+        }
+      } catch (error) {
+        console.error(`Polling error for ${angle}:`, error);
+      }
+    };
+
+    // Start polling for this angle
+    poll(); // Initial poll
+    const interval = setInterval(poll, POLL_INTERVAL);
+    anglePollIntervalsRef.current.set(angle, interval);
+  };
+
+  const checkAllAnglesComplete = () => {
+    setAngleImages(currentAngles => {
+      const allDone = currentAngles.every(img => 
+        img.status === 'completed' || img.status === 'failed'
+      );
+      
+      if (allDone) {
+        // Clear all remaining intervals
+        anglePollIntervalsRef.current.forEach(interval => clearInterval(interval));
+        anglePollIntervalsRef.current.clear();
+        
+        const anyCompleted = currentAngles.some(img => img.status === 'completed');
+        const allCompleted = currentAngles.every(img => img.status === 'completed');
+        
+        if (allCompleted) {
+          setStatus('complete');
+          // Save multi-angle concept to database
+          if (currentPromptRef.current) {
+            saveMultiAngleConcept(currentPromptRef.current, currentAngles);
+          }
+        } else if (anyCompleted) {
+          setStatus('complete'); // Partial success
+          if (currentPromptRef.current) {
+            saveMultiAngleConcept(currentPromptRef.current, currentAngles);
+          }
+        } else {
+          setStatus('error');
+          setErrorMessage('All angles failed. Please try again.');
+        }
+      }
+      
+      return currentAngles;
+    });
+  };
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
       }
+      // Clear all angle polling intervals
+      anglePollIntervalsRef.current.forEach(interval => clearInterval(interval));
+      anglePollIntervalsRef.current.clear();
     };
   }, []);
 
@@ -238,11 +450,52 @@ export default function ConceptArchitect() {
     }
   };
 
+  const saveMultiAngleConcept = async (prompt: string, images: AngleImage[]) => {
+    try {
+      const anyCompleted = images.some(img => img.status === 'completed');
+      const allCompleted = images.every(img => img.status === 'completed');
+      
+      const response = await fetch('/api/gallery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          images,
+          status: allCompleted ? 'completed' : anyCompleted ? 'partial' : 'failed',
+          metadata: {
+            generation_time_ms: Date.now() - pollStartTimeRef.current,
+            mode: 'multi-angle',
+          },
+        }),
+      });
+      
+      if (!response.ok) {
+        console.warn('Failed to save multi-angle concept:', await response.text());
+      } else {
+        // Refresh history after successful save
+        fetchHistory();
+      }
+    } catch (error) {
+      console.error('Error saving multi-angle concept:', error);
+    }
+  };
+
   const loadFromHistory = (concept: Concept) => {
     setPrompt(concept.prompt);
-    setImageUrl(concept.image_url || null);
-    setStatus('complete');
     setErrorMessage(null);
+    
+    // Check if this is a multi-angle concept
+    if (concept.images && concept.images.length > 0) {
+      setGenerationMode('multi-angle');
+      setAngleImages(concept.images);
+      setImageUrl(null);
+    } else {
+      setGenerationMode('single');
+      setImageUrl(concept.image_url || null);
+      setAngleImages([]);
+    }
+    
+    setStatus('complete');
     currentJobIdRef.current = concept.job_id || null;
     currentPromptRef.current = concept.prompt;
   };
@@ -280,6 +533,30 @@ export default function ConceptArchitect() {
           </div>
 
         <div className="space-y-4">
+          {/* Mode Toggle */}
+          <div className="flex gap-2 p-1 bg-neutral-900/50 rounded-lg border border-neutral-700">
+            <button
+              onClick={() => setGenerationMode('single')}
+              className={`flex-1 py-2 px-4 rounded-md transition-all text-sm font-medium ${
+                generationMode === 'single'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              Single Image
+            </button>
+            <button
+              onClick={() => setGenerationMode('multi-angle')}
+              className={`flex-1 py-2 px-4 rounded-md transition-all text-sm font-medium ${
+                generationMode === 'multi-angle'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              4-Angle View
+            </button>
+          </div>
+
           <div className="relative">
             <textarea
               className="w-full bg-neutral-900/50 border border-neutral-700 rounded-xl p-4 text-neutral-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-none"
@@ -322,8 +599,8 @@ export default function ConceptArchitect() {
           </div>
         )}
 
-        {/* Image Reveal Section */}
-        {imageUrl && status === 'complete' && (
+        {/* Single Image Display */}
+        {generationMode === 'single' && imageUrl && status === 'complete' && (
           <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
             <div className="relative aspect-video w-full rounded-xl overflow-hidden border border-neutral-700 shadow-2xl">
               <img 
@@ -351,6 +628,86 @@ export default function ConceptArchitect() {
                 Generate Another
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Multi-Angle 4-Grid Display */}
+        {generationMode === 'multi-angle' && angleImages.length > 0 && (
+          <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
+            <div className="grid grid-cols-2 gap-4">
+              {ANGLE_TYPES.map((angle) => {
+                const angleData = angleImages.find(img => img.angle === angle);
+                const isCompleted = angleData?.status === 'completed';
+                const isFailed = angleData?.status === 'failed';
+                
+                return (
+                  <div 
+                    key={angle}
+                    className="relative aspect-video rounded-xl overflow-hidden border border-neutral-700 shadow-xl bg-neutral-900"
+                  >
+                    {isCompleted && angleData?.url ? (
+                      <img 
+                        src={angleData.url} 
+                        alt={`${getAngleDisplayName(angle)} View`} 
+                        className="object-cover w-full h-full"
+                      />
+                    ) : isFailed ? (
+                      <div className="flex flex-col items-center justify-center h-full text-red-400">
+                        <svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        <p className="text-sm">Failed</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full">
+                        <div className="animate-spin mb-2 w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full" />
+                        <p className="text-neutral-400 text-sm animate-pulse">
+                          {getAngleLoadingMessage(angle)}
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Angle Label */}
+                    <div className="absolute top-2 left-2 px-3 py-1 bg-neutral-900/80 backdrop-blur-sm rounded-full border border-neutral-700">
+                      <span className="text-xs font-medium text-neutral-200">
+                        {getAngleDisplayName(angle)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* Action Buttons Below Grid */}
+            {status === 'complete' && (
+              <div className="mt-4 flex gap-3">
+                <button
+                  onClick={() => {
+                    // Download all completed images
+                    angleImages.forEach(img => {
+                      if (img.status === 'completed' && img.url) {
+                        const link = document.createElement('a');
+                        link.href = img.url;
+                        link.download = `architectural-concept-${img.angle}-${Date.now()}.jpg`;
+                        link.click();
+                      }
+                    });
+                  }}
+                  className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-all flex justify-center items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                  </svg>
+                  Download All
+                </button>
+                <button
+                  onClick={() => { setStatus('idle'); setAngleImages([]); setPrompt(''); }}
+                  className="flex-1 py-3 rounded-xl bg-neutral-700 hover:bg-neutral-600 text-neutral-200 font-medium transition-all"
+                >
+                  Generate Another
+                </button>
+              </div>
+            )}
           </div>
         )}
         </div>
@@ -391,11 +748,33 @@ export default function ConceptArchitect() {
                   >
                     {/* Thumbnail */}
                     <div className="aspect-video w-full rounded overflow-hidden mb-2 bg-neutral-800">
-                      <img 
-                        src={concept.image_url || ''} 
-                        alt={concept.prompt}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
+                      {concept.images && concept.images.length > 0 ? (
+                        // Multi-angle concept: show 2x2 grid
+                        <div className="grid grid-cols-2 gap-0.5 w-full h-full">
+                          {concept.images.slice(0, 4).map((img, idx) => (
+                            <div key={idx} className="relative">
+                              {img.status === 'completed' && img.url ? (
+                                <img 
+                                  src={img.url} 
+                                  alt={img.angle}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-neutral-900 flex items-center justify-center">
+                                  <span className="text-neutral-600 text-xs">-</span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        // Single image concept
+                        <img 
+                          src={concept.image_url || ''} 
+                          alt={concept.prompt}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                      )}
                     </div>
                     
                     {/* Prompt Text */}
