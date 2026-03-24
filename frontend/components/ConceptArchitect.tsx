@@ -83,7 +83,9 @@ export default function ConceptArchitect() {
         });
         
         if (!response.ok) {
-          throw new Error("Backend failed to respond");
+          const errorText = await response.text();
+          console.error('Generation API error:', response.status, errorText);
+          throw new Error(`Backend failed to respond (${response.status}): ${errorText}`);
         }
         
         const rawData = await response.json();
@@ -155,7 +157,7 @@ export default function ConceptArchitect() {
         
         // TEMPORARY: Only send user_prompt until n8n workflow is updated
         // TODO: Remove this flag after updating n8n workflow (see N8N_WORKFLOW_UPDATE.md)
-        const useAdvancedFeatures = false; // Set to true after updating n8n
+        const useAdvancedFeatures = true; // Set to true after updating n8n
         
         const exteriorRequestBody: any = { 
           user_prompt: anglePrompts['exterior']
