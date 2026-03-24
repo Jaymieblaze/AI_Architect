@@ -77,9 +77,14 @@ export function extractArchitecturalDNA(prompt: string): string {
 
 /**
  * Generates 4 angle-specific prompts with shared architectural DNA
+ * Uses consistent identifier to encourage same building across angles
  */
 export function generateAnglePrompts(userPrompt: string): Record<AngleType, string> {
   const dna = extractArchitecturalDNA(userPrompt);
+  
+  // Generate a consistent building identifier from the prompt 
+  // This helps the AI understand it's the same building
+  const buildingId = userPrompt.split(' ').slice(0, 5).join(' ');
   
   const prompts: Record<AngleType, string> = {
     exterior: '',
@@ -90,7 +95,13 @@ export function generateAnglePrompts(userPrompt: string): Record<AngleType, stri
   
   ANGLE_TYPES.forEach((angle) => {
     const descriptor = ANGLE_DESCRIPTORS[angle];
-    prompts[angle] = `${descriptor.prefix}, ${dna}, ${descriptor.context}, architectural photography, professional render, highly detailed`;
+    
+    // For non-exterior angles, explicitly reference "the same building"
+    const buildingRef = angle === 'exterior' 
+      ? `${userPrompt}` 
+      : `THE SAME ${buildingId} building`;
+    
+    prompts[angle] = `${descriptor.prefix}, ${buildingRef}, ${dna}, ${descriptor.context}, consistent architectural style, professional architectural photography, highly detailed`;
   });
   
   return prompts;

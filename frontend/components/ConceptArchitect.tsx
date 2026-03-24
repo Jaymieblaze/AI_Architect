@@ -142,63 +142,68 @@ export default function ConceptArchitect() {
         }));
         setAngleImages(initialAngles);
         
-        // Trigger generation for all 4 angles in parallel
-        const generationPromises = ANGLE_TYPES.map(async (angle) => {
-          try {
-            const response = await fetch('/api/generate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ user_prompt: anglePrompts[angle] }),
-            });
+        // SEQUENTIAL GENERATION: Generate exterior first, then others
+        // This provides better coherence as the exterior establishes the building
+        try {
+          // Step 1: Generate EXTERIOR first (establishes the building design)
+          console.log('Generating exterior view first...');
+          const exteriorResponse = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_prompt: anglePrompts['exterior'] }),
+          });
+          
+          if (exteriorResponse.ok) {
+            const rawData = await exteriorResponse.json();
+            let job_id = extractJobId(rawData);
             
-            if (!response.ok) {
-              throw new Error(`Failed to generate ${angle} view`);
+            if (job_id) {
+              angleJobIdsRef.current.set('exterior', job_id);
+              pollAngleStatus('exterior', job_id);
             }
-            
-            const rawData = await response.json();
-            
-            // Extract job_id (same logic as single mode)
-            let job_id: string | null = null;
-            
-            if (typeof rawData === 'object' && rawData !== null) {
-              if ('job_id' in rawData && typeof rawData.job_id === 'string') {
-                job_id = rawData.job_id;
-              } else if ('data' in rawData && typeof rawData.data === 'string') {
-                try {
-                  const parsed = JSON.parse(rawData.data);
-                  if (parsed.job_id && typeof parsed.job_id === 'string') {
-                    job_id = parsed.job_id;
-                  }
-                } catch (e) {
-                  console.error('Failed to parse nested data:', e);
-                }
-              } else if (Array.isArray(rawData) && rawData.length > 0 && rawData[0]?.job_id) {
-                job_id = rawData[0].job_id;
-              }
-            }
-            
-            if (!job_id) {
-              throw new Error(`No job ID for ${angle} view`);
-            }
-            
-            console.log(`${angle} job_id:`, job_id);
-            angleJobIdsRef.current.set(angle, job_id);
-            
-            // Start polling for this angle
-            pollAngleStatus(angle, job_id);
-            
-            return { angle, job_id };
-          } catch (error) {
-            console.error(`Failed to start ${angle} generation:`, error);
-            // Update this angle to failed
-            setAngleImages(prev => prev.map(img => 
-              img.angle === angle ? { ...img, status: 'failed' as const } : img
-            ));
-            return { angle, job_id: null };
           }
-        });
-        
-        await Promise.all(generationPromises);
+          
+          // Step 2: Generate other angles in parallel (with slight delay to let exterior start)
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          const otherAngles: AngleType[] = ['interior', 'aerial', 'detail'];
+          const otherPromises = otherAngles.map(async (angle) => {
+            try {
+              const response = await fetch('/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_prompt: anglePrompts[angle] }),
+              });
+              
+              if (!response.ok) {
+                throw new Error(`Failed to generate ${angle} view`);
+              }
+              
+              const rawData = await response.json();
+              let job_id = extractJobId(rawData);
+              
+              if (!job_id) {
+                throw new Error(`No job ID for ${angle} view`);
+              }
+              
+              angleJobIdsRef.current.set(angle, job_id);
+              pollAngleStatus(angle, job_id);
+              
+              return { angle, job_id };
+            } catch (error) {
+              console.error(`Failed to start ${angle} generation:`, error);
+              setAngleImages(prev => prev.map(img => 
+                img.angle === angle ? { ...img, status: 'failed' as const } : img
+              ));
+              return { angle, job_id: null };
+            }
+          });
+          
+          await Promise.all(otherPromises);
+          
+        } catch (error) {
+          console.error('Multi-angle generation error:', error);
+        }
         
       } catch (error) {
         console.error("Failed to start multi-angle generation", error);
@@ -207,6 +212,28 @@ export default function ConceptArchitect() {
       }
     }
   };
+
+  // Helper to extract job_id from various response formats
+  const extractJobId = (rawData: any): string | null => {
+    if (typeof rawData === 'object' && rawData !== null) {
+      if ('job_id' in rawData && typeof rawData.job_id === 'string') {
+        return rawData.job_id;
+      }
+      if ('data' in rawData && typeof rawData.data === 'string') {
+        try {
+          const parsed = JSON.parse(rawData.data);
+          if (parsed.job_id && typeof parsed.job_id === 'string') {
+            return parsed.job_id;
+          }
+        } catch (e) {
+          console.error('Failed to parse nested data:', e);
+        }
+      }
+      if (Array.isArray(rawData) && rawData.length > 0 && rawData[0]?.job_id) {
+        return rawData[0].job_id;
+      }
+    }
+    return null;};
 
   const pollStatus = async (jobId: string) => {
     const poll = async () => {
