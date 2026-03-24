@@ -4,8 +4,15 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    // The Next.js server securely talks to n8n's PRODUCTION webhook
-    const n8nResponse = await fetch('http://localhost:5678/webhook/generate-concept', {
+    const webhookUrl = process.env.N8N_WEBHOOK_URL;
+    
+    if (!webhookUrl) {
+      console.error('🚨 CRITICAL: N8N_WEBHOOK_URL is missing!');
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+
+    // The Next.js server securely talks to n8n's webhook
+    const n8nResponse = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
