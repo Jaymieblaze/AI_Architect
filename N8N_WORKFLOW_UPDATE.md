@@ -27,23 +27,11 @@ To get **4 views of the SAME building**, follow these 3 steps:
 }
 ```
 
-#### Updated JSON Body (with seed + img2img support):
-```json
-{
-  "prompt": "{{$json.body.user_prompt}}",
-  "width": 1024,
-  "height": 576,
-  "steps": 28,
-  "seed": "{{$json.body.seed || 2892901615}}",
-  "imageUrls": "={{$json.body.imageUrls || []}}"
-}
-```
+#### Option A: Use Expression Mode (RECOMMENDED)
 
-**Note:** The updated prompt is simplified because the frontend now handles the "Architectural render" prefix in the angle prompts.
-
-### Alternative: Use Expression Mode
-
-If the above doesn't work, switch the JSON Body to **Expression mode** and use:
+1. Click the **gear icon** next to "JSON Body" field
+2. Select **"Expression"** mode
+3. Paste this code:
 
 ```javascript
 ={{
@@ -65,6 +53,21 @@ If the above doesn't work, switch the JSON Body to **Expression mode** and use:
   return body;
 }}
 ```
+
+#### Option B: Use JSON Mode (simpler but less flexible)
+
+If you prefer JSON mode, use this simpler version that doesn't include conditionals:
+
+```json
+{
+  "prompt": "{{$json.body.user_prompt}}",
+  "width": 1024,
+  "height": 576,
+  "steps": 28
+}
+```
+
+**Note:** This JSON mode version only sends the prompt. The seed/imageUrls won't be passed, so you'll get 4 different buildings. For coherent multi-angle generation, use **Option A (Expression Mode)**.
 
 5. **Save the workflow** in n8n
 
