@@ -19,7 +19,9 @@ export interface GenerateResponse {
  */
 export interface GenerateRequest {
   user_prompt: string;
- mode?: 'single' | 'multi-angle'; // Optional: defaults to 'single'
+  mode?: 'single' | 'multi-angle'; // Optional: defaults to 'single'
+  seed?: number; // Optional: random seed for consistency
+  imageUrls?: string[]; // Optional: reference images for img2img
 }
 
 /**

@@ -1,0 +1,78 @@
+[{
+  "updatedAt": "2026-03-24T12:46:03.136Z",
+  "createdAt": "2026-03-24T12:16:08.494Z",
+  "id": "FF73I4E1TJwlzlsp",
+  "name": "My workflow",
+  "description": "AI Architect with multi-angle support (seed + img2img)",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "generate-concept",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "UI Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [64, -80],
+      "webhookId": "architect-agent-webhook",
+      "id": "654bbe32-e3ba-4260-8701-56833cad37a7"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.krea.ai/generate/image/bfl/flux-1-dev",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.KREA_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ \n  const body = {\n    \"prompt\": \"Architectural render of \" + $json.body.user_prompt + \", photorealistic architectural photography, parametric design elements, natural lighting, high-end materials, 8k resolution, highly detailed, professional architectural visualization\",\n    \"width\": 1024,\n    \"height\": 576,\n    \"steps\": 28\n  };\n  \n  // Add seed if provided\n  if ($json.body.seed) {\n    body.seed = $json.body.seed;\n  }\n  \n  // Add imageUrls if provided (for img2img)\n  if ($json.body.imageUrls && Array.isArray($json.body.imageUrls)) {\n    body.imageUrls = $json.body.imageUrls;\n  }\n  \n  return JSON.stringify(body);\n}}",
+        "options": {}
+      },
+      "name": "Krea AI Generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [368, -80],
+      "id": "27f5be9e-05b1-4ff3-9c8e-71b83bbfc55a"
+    }
+  ],
+  "connections": {
+    "UI Webhook": {
+      "main": [[{
+        "node": "Krea AI Generator",
+        "type": "main",
+        "index": 0
+      }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "updated-multi-angle",
+  "activeVersionId": "updated-multi-angle",
+  "versionCounter": 8,
+  "triggerCount": 1,
+  "tags": [],
+  "versionMetadata": {
+    "name": "Multi-angle with seed + img2img support",
+    "description": "Supports seed parameter and imageUrls for coherent multi-angle generation"
+  }
+}]
