@@ -1,0 +1,23 @@
+# Environment
+.env
+.env.local
+.env*.local
+
+# Node
+node_modules/
+
+# n8n
+.n8n/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
