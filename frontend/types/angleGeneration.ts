@@ -63,16 +63,16 @@ export function extractArchitecturalDNA(prompt: string): string {
   if (dna.includes('atrium')) features.push('double-height atrium');
   if (dna.includes('cantilever')) features.push('cantilevered volumes');
   
-  // Combine into DNA string
+  // Combine into DNA string - limit to top 4 keywords for brevity
   const dnaElements = [
-    ...materials,
-    ...styles,
-    ...features,
+    ...materials.slice(0, 2),  // Max 2 materials
+    ...styles.slice(0, 1),      // Max 1 style
+    ...features.slice(0, 1),    // Max 1 feature
   ];
   
   return dnaElements.length > 0 
     ? dnaElements.join(', ')
-    : prompt; // Fallback to original prompt if no keywords matched
+    : ''; // Return empty if no keywords matched
 }
 
 /**
@@ -81,10 +81,6 @@ export function extractArchitecturalDNA(prompt: string): string {
  */
 export function generateAnglePrompts(userPrompt: string): Record<AngleType, string> {
   const dna = extractArchitecturalDNA(userPrompt);
-  
-  // Generate a consistent building identifier from the prompt 
-  // This helps the AI understand it's the same building
-  const buildingId = userPrompt.split(' ').slice(0, 5).join(' ');
   
   const prompts: Record<AngleType, string> = {
     exterior: '',
@@ -96,12 +92,18 @@ export function generateAnglePrompts(userPrompt: string): Record<AngleType, stri
   ANGLE_TYPES.forEach((angle) => {
     const descriptor = ANGLE_DESCRIPTORS[angle];
     
-    // For non-exterior angles, explicitly reference "the same building"
-    const buildingRef = angle === 'exterior' 
-      ? `${userPrompt}` 
-      : `THE SAME ${buildingId} building`;
-    
-    prompts[angle] = `${descriptor.prefix}, ${buildingRef}, ${dna}, ${descriptor.context}, consistent architectural style, professional architectural photography, highly detailed`;
+    // Keep prompts concise to stay under 500 char limit
+    if (angle === 'exterior') {
+      // Exterior: prefix + user prompt + DNA
+      prompts[angle] = dna 
+        ? `${descriptor.prefix}, ${userPrompt}, ${dna}`
+        : `${descriptor.prefix}, ${userPrompt}`;
+    } else {
+      // Other angles: prefix + reference to same building + DNA
+      prompts[angle] = dna
+        ? `${descriptor.prefix}, same building: ${userPrompt}, ${dna}`
+        : `${descriptor.prefix}, same building: ${userPrompt}`;
+    }
   });
   
   return prompts;
