@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
+import type { GenerateRequest, GenerateResponse, ErrorResponse } from '@/types/api';
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = await request.json() as GenerateRequest;
 
     const webhookUrl = process.env.N8N_WEBHOOK_URL;
     
@@ -22,11 +23,14 @@ export async function POST(request: Request) {
       throw new Error(`n8n responded with status: ${n8nResponse.status}`);
     }
 
-    const data = await n8nResponse.json();
-    return NextResponse.json(data);
+    const data = await n8nResponse.json() as GenerateResponse;
+    return NextResponse.json<GenerateResponse>(data);
     
   } catch (error) {
     console.error("n8n Connection Error:", error);
-    return NextResponse.json({ error: 'Failed to contact architectural agent' }, { status: 500 });
+    return NextResponse.json<ErrorResponse>(
+      { error: 'Failed to contact architectural agent' },
+      { status: 500 }
+    );
   }
 }

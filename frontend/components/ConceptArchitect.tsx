@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import type { GenerateResponse, PollResponse } from '@/types/api';
 
 const LOADING_PHRASES = [
   "Drafting conceptual geometry...",
@@ -10,11 +11,19 @@ const LOADING_PHRASES = [
   "Finalizing architectural render..."
 ];
 
+const MAX_POLL_DURATION = 5 * 60 * 1000; // 5 minutes
+const POLL_INTERVAL = 3000; // 3 seconds
+const MAX_RETRIES = 3;
+
 export default function ConceptArchitect() {
   const [prompt, setPrompt] = useState('');
-  const [status, setStatus] = useState<'idle' | 'generating' | 'complete'>('idle');
+  const [status, setStatus] = useState<'idle' | 'generating' | 'complete' | 'error'>('idle');
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loadingText, setLoadingText] = useState(LOADING_PHRASES[0]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const pollStartTimeRef = useRef<number>(0);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const retryCountRef = useRef<number>(0);
 
   useEffect(() => {
     if (status !== 'generating') return;
@@ -30,6 +39,8 @@ export default function ConceptArchitect() {
     if (!prompt) return;
     setStatus('generating');
     setImageUrl(null);
+    setErrorMessage(null);
+    retryCountRef.current = 0;
 
     try {
       const response = await fetch('/api/generate', {
@@ -38,67 +49,88 @@ export default function ConceptArchitect() {
         body: JSON.stringify({ user_prompt: prompt }),
       });
       
-      if (!response.ok) throw new Error("Backend failed to respond");
+      if (!response.ok) {
+        throw new Error("Backend failed to respond");
+      }
       
-      const rawData = await response.json();
-      console.log("Raw response from n8n:", rawData); 
+      const data = await response.json() as GenerateResponse;
 
-      // Safely extract the job_id, no matter how n8n packages it
-      let job_id = null;
-      
-      if (rawData.job_id) {
-        job_id = rawData.job_id;
-      } else if (rawData.data && typeof rawData.data === 'string') {
-        const parsed = JSON.parse(rawData.data);
-        job_id = parsed.job_id;
-      } else if (Array.isArray(rawData)) {
-        job_id = rawData[0]?.job_id;
+      if (!data.job_id) {
+        throw new Error(`No job ID returned. Received: ${JSON.stringify(data)}`);
       }
 
-      if (!job_id) {
-        throw new Error(`No job ID returned. We received: ${JSON.stringify(rawData)}`);
-      }
-
-      // 2. Start the Polling Loop!
-      pollStatus(job_id);
+      // Start the Polling Loop
+      pollStartTimeRef.current = Date.now();
+      pollStatus(data.job_id);
 
     } catch (error) {
       console.error("Failed to start generation", error);
-      setStatus('idle');
-      alert("Failed to connect to the Architect Agent. Check console for details.");
+      setStatus('error');
+      setErrorMessage("Failed to connect to the Architect Agent. Please try again.");
     }
   };
 
   const pollStatus = async (jobId: string) => {
-    const interval = setInterval(async () => {
+    const poll = async () => {
+      // Check timeout
+      if (Date.now() - pollStartTimeRef.current > MAX_POLL_DURATION) {
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        setStatus('error');
+        setErrorMessage('Generation timeout. The request is taking too long. Please try again.');
+        return;
+      }
+
       try {
         const response = await fetch(`/api/poll?jobId=${jobId}`);
         
-        // 1. Read the raw text first. If Next.js sends a blank string, don't crash!
+        if (!response.ok) {
+          throw new Error(`Poll failed with status ${response.status}`);
+        }
+
         const text = await response.text();
         if (!text) {
           console.warn("Received empty response from server, skipping this tick...");
-          return; // Skip this check and try again in 3 seconds
+          return;
         }
 
-        // 2. Now that we know it has text, safely parse it into JSON
-        const data = JSON.parse(text);
+        const data = JSON.parse(text) as PollResponse;
 
         if (data.status === 'completed') {
-          clearInterval(interval);
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
           setImageUrl(data.image_url); 
           setStatus('complete');
+          retryCountRef.current = 0;
         } else if (data.status === 'failed') {
-          clearInterval(interval);
-          setStatus('idle');
-          alert("Render failed. Please try again.");
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setStatus('error');
+          setErrorMessage('Render failed. Please try again with a different prompt.');
         }
       } catch (error) {
         console.error("Polling error:", error);
-        // We no longer crash here, the loop will just gracefully try again!
+        retryCountRef.current++;
+        
+        // If we've exceeded max retries, stop polling
+        if (retryCountRef.current >= MAX_RETRIES) {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setStatus('error');
+          setErrorMessage('Connection lost. Please check your network and try again.');
+        }
       }
-    }, 3000);
+    };
+
+    // Start polling
+    poll(); // Initial poll
+    pollIntervalRef.current = setInterval(poll, POLL_INTERVAL);
   };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-neutral-900 flex flex-col items-center justify-center p-6 font-sans">
@@ -131,6 +163,19 @@ export default function ConceptArchitect() {
             )}
           </button>
         </div>
+
+        {/* Error Message */}
+        {status === 'error' && errorMessage && (
+          <div className="mt-6 p-4 bg-red-900/20 border border-red-700 rounded-lg">
+            <p className="text-red-300 text-sm">{errorMessage}</p>
+            <button
+              onClick={() => { setStatus('idle'); setErrorMessage(null); }}
+              className="mt-2 text-red-400 hover:text-red-300 text-xs underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* Image Reveal Section */}
         {imageUrl && status === 'complete' && (

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { PollResponse, ErrorResponse, KreaJobResponse } from '@/types/api';
 
 // 🔥 THE FIX: Tell Next.js this is a dynamic route and should NEVER be cached
 export const dynamic = 'force-dynamic'; 
@@ -8,7 +9,10 @@ export async function GET(request: Request) {
   const jobId = searchParams.get('jobId');
 
   if (!jobId) {
-    return NextResponse.json({ error: 'Missing jobId' }, { status: 400 });
+    return NextResponse.json<ErrorResponse>(
+      { error: 'Missing jobId' },
+      { status: 400 }
+    );
   }
 
   try {
@@ -16,7 +20,10 @@ export async function GET(request: Request) {
     
     if (!kreaKey) {
       console.error("🚨 CRITICAL: KREA_API_KEY is missing!");
-      return NextResponse.json({ error: 'API Key missing on server' }, { status: 500 });
+      return NextResponse.json<ErrorResponse>(
+        { error: 'API Key missing on server' },
+        { status: 500 }
+      );
     }
 
     const response = await fetch(`https://api.krea.ai/jobs/${jobId}`, {
@@ -32,18 +39,24 @@ export async function GET(request: Request) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`🚨 KREA API ERROR [${response.status}]:`, errorText);
-      return NextResponse.json({ error: `Krea returned ${response.status}` }, { status: 500 });
+      return NextResponse.json<ErrorResponse>(
+        { error: `Krea returned ${response.status}` },
+        { status: 500 }
+      );
     }
 
-    const data = await response.json();
+    const data = await response.json() as KreaJobResponse;
     
-    return NextResponse.json({
-      status: data.status,
+    return NextResponse.json<PollResponse>({
+      status: data.status as PollResponse['status'],
       image_url: data.result?.urls?.[0] || null
     });
     
   } catch (error) {
     console.error("🚨 NEXT.JS SERVER ERROR:", error);
-    return NextResponse.json({ error: 'Failed to poll Krea' }, { status: 500 });
+    return NextResponse.json<ErrorResponse>(
+      { error: 'Failed to poll Krea' },
+      { status: 500 }
+    );
   }
 }
