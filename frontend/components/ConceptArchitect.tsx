@@ -14,6 +14,8 @@ const LOADING_PHRASES = [
 const MAX_POLL_DURATION = 5 * 60 * 1000; // 5 minutes
 const POLL_INTERVAL = 3000; // 3 seconds
 const MAX_RETRIES = 3;
+const MIN_PROMPT_LENGTH = 10;
+const MAX_PROMPT_LENGTH = 500;
 
 export default function ConceptArchitect() {
   const [prompt, setPrompt] = useState('');
@@ -36,7 +38,16 @@ export default function ConceptArchitect() {
   }, [status]);
 
   const generateConcept = async () => {
-    if (!prompt) return;
+    if (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH) {
+      setErrorMessage(`Please enter at least ${MIN_PROMPT_LENGTH} characters to describe your concept.`);
+      return;
+    }
+    
+    if (prompt.length > MAX_PROMPT_LENGTH) {
+      setErrorMessage(`Prompt is too long. Please keep it under ${MAX_PROMPT_LENGTH} characters.`);
+      return;
+    }
+
     setStatus('generating');
     setImageUrl(null);
     setErrorMessage(null);
@@ -132,6 +143,26 @@ export default function ConceptArchitect() {
     };
   }, []);
 
+  // Keyboard shortcut: Ctrl/Cmd + Enter to generate
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && prompt && status === 'idle') {
+        e.preventDefault();
+        generateConcept();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [prompt, status]);
+
+  const handleDownload = () => {
+    if (!imageUrl) return;
+    const link = document.createElement('a');
+    link.href = imageUrl;
+    link.download = `architectural-concept-${Date.now()}.jpg`;
+    link.click();
+  };
+
   return (
     <div className="min-h-screen bg-neutral-900 flex flex-col items-center justify-center p-6 font-sans">
       <div className="max-w-3xl w-full bg-neutral-800/50 backdrop-blur-xl border border-neutral-700 rounded-2xl p-8 shadow-2xl">
@@ -142,19 +173,26 @@ export default function ConceptArchitect() {
         <p className="text-neutral-400 mb-8">Describe your vision, and the agent will draft the concept.</p>
 
         <div className="space-y-4">
-          <textarea
-            className="w-full bg-neutral-900/50 border border-neutral-700 rounded-xl p-4 text-neutral-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-none"
-            rows={4}
-            placeholder="e.g., A minimalist tropical resort with timber cladding and infinity pools..."
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            disabled={status === 'generating'}
-          />
+          <div className="relative">
+            <textarea
+              className="w-full bg-neutral-900/50 border border-neutral-700 rounded-xl p-4 text-neutral-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-none"
+              rows={4}
+              placeholder="e.g., A minimalist tropical resort with timber cladding and infinity pools..."
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              disabled={status === 'generating'}
+              maxLength={MAX_PROMPT_LENGTH}
+            />
+            <div className="absolute bottom-2 right-2 text-xs text-neutral-500">
+              {prompt.length}/{MAX_PROMPT_LENGTH}
+            </div>
+          </div>
 
           <button
             onClick={generateConcept}
-            disabled={status === 'generating' || !prompt}
+            disabled={status === 'generating' || !prompt || prompt.trim().length < MIN_PROMPT_LENGTH}
             className="w-full py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+            title="Ctrl/Cmd + Enter"
           >
             {status === 'generating' ? (
               <span className="animate-pulse">{loadingText}</span>
@@ -180,12 +218,30 @@ export default function ConceptArchitect() {
         {/* Image Reveal Section */}
         {imageUrl && status === 'complete' && (
           <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
-            <div className="relative aspect-video w-full rounded-xl overflow-hidden border border-neutral-700 shadow-2xl">
+            <div className="relative aspect-video w-full rounded-xl overflow-hidden border border-neutral-700 shadow-2xl group">
               <img 
                 src={imageUrl} 
                 alt="Generated Architectural Concept" 
                 className="object-cover w-full h-full"
               />
+              {/* Overlay with download button */}
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors duration-300 flex items-center justify-center">
+                <button
+                  onClick={handleDownload}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium shadow-lg"
+                >
+                  Download Image
+                </button>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-between items-center">
+              <button
+                onClick={() => { setStatus('idle'); setImageUrl(null); setPrompt(''); }}
+                className="text-sm text-neutral-400 hover:text-neutral-200 transition-colors"
+              >
+                ← Generate Another
+              </button>
+              <span className="text-xs text-neutral-500">Right-click image to save</span>
             </div>
           </div>
         )}

@@ -5,6 +5,29 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as GenerateRequest;
 
+    // Validate input
+    if (!body.user_prompt || typeof body.user_prompt !== 'string') {
+      return NextResponse.json<ErrorResponse>(
+        { error: 'Invalid prompt: user_prompt is required and must be a string' },
+        { status: 400 }
+      );
+    }
+
+    const trimmedPrompt = body.user_prompt.trim();
+    if (trimmedPrompt.length < 10) {
+      return NextResponse.json<ErrorResponse>(
+        { error: 'Prompt too short: minimum 10 characters required' },
+        { status: 400 }
+      );
+    }
+
+    if (trimmedPrompt.length > 500) {
+      return NextResponse.json<ErrorResponse>(
+        { error: 'Prompt too long: maximum 500 characters allowed' },
+        { status: 400 }
+      );
+    }
+
     const webhookUrl = process.env.N8N_WEBHOOK_URL;
     
     if (!webhookUrl) {
