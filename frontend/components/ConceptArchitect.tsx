@@ -244,30 +244,31 @@ export default function ConceptArchitect() {
         {/* Image Reveal Section */}
         {imageUrl && status === 'complete' && (
           <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
-            <div className="relative aspect-video w-full rounded-xl overflow-hidden border border-neutral-700 shadow-2xl group">
+            <div className="relative aspect-video w-full rounded-xl overflow-hidden border border-neutral-700 shadow-2xl">
               <img 
                 src={imageUrl} 
                 alt="Generated Architectural Concept" 
-                className="object-cover w-full h-full"
+                className="object-contain w-full h-full bg-neutral-900"
               />
-              {/* Overlay with download button */}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors duration-300 flex items-center justify-center">
-                <button
-                  onClick={handleDownload}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium shadow-lg"
-                >
-                  Download Image
-                </button>
-              </div>
             </div>
-            <div className="mt-4 flex justify-between items-center">
+            
+            {/* Action Buttons Below Image */}
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={handleDownload}
+                className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-all flex justify-center items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                </svg>
+                Download Image
+              </button>
               <button
                 onClick={() => { setStatus('idle'); setImageUrl(null); setPrompt(''); }}
-                className="text-sm text-neutral-400 hover:text-neutral-200 transition-colors"
+                className="flex-1 py-3 rounded-xl bg-neutral-700 hover:bg-neutral-600 text-neutral-200 font-medium transition-all"
               >
-                ← Generate Another
+                Generate Another
               </button>
-              <span className="text-xs text-neutral-500">Right-click image to save</span>
             </div>
           </div>
         )}
