@@ -105,12 +105,12 @@ export default function ConceptArchitect() {
         // Store source image URL for database save
         uploadedImageUrlRef.current = sourceImageUrl;
 
-        // Enhance prompt to emphasize reference image
-        const enhancedPrompt = `Based on the uploaded architectural drawing: ${prompt}`;
+        // Enhance prompt to emphasize preserving geometry
+        const enhancedPrompt = `Photorealistic architectural render of this building: ${prompt}. Maintain exact building geometry and perspective from the reference image.`;
         console.log('Enhanced prompt:', enhancedPrompt);
 
-        // Generate with the uploaded image as reference (using direct Krea API route)
-        const response = await fetch('/api/generate-krea', {
+        // Generate with the uploaded image as reference (using Fal.ai Flux Ultra)
+        const response = await fetch('/api/generate-fal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -129,17 +129,17 @@ export default function ConceptArchitect() {
         }
         
         const rawData = await response.json();
-        console.log("Raw response from n8n:", rawData);
+        console.log("Raw response from Fal.ai:", rawData);
 
-        const job_id = extractJobId(rawData);
+        const requestId = rawData.request_id || rawData.job_id;
 
-        if (!job_id) {
-          throw new Error(`No job ID returned. Received: ${JSON.stringify(rawData)}`);
+        if (!requestId) {
+          throw new Error(`No request ID returned. Received: ${JSON.stringify(rawData)}`);
         }
 
-        // Start the Polling Loop
-        currentJobIdRef.current = job_id;
-        pollStatus(job_id);
+        // Start the Polling Loop (use Fal.ai polling endpoint)
+        currentJobIdRef.current = requestId;
+        pollStatusFal(requestId);
 
       } catch (error) {
         console.error("Failed to start image-to-render generation", error);
@@ -426,6 +426,64 @@ export default function ConceptArchitect() {
 
       try {
         const response = await fetch(`/api/poll?jobId=${jobId}`);
+        
+        if (!response.ok) {
+          throw new Error(`Poll failed with status ${response.status}`);
+        }
+
+        const text = await response.text();
+        if (!text) {
+          console.warn("Received empty response from server, skipping this tick...");
+          return;
+        }
+
+        const data = JSON.parse(text) as PollResponse;
+
+        if (data.status === 'completed') {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setImageUrl(data.image_url); 
+          setStatus('complete');
+          retryCountRef.current = 0;
+          
+          // Save to database
+          if (data.image_url && currentJobIdRef.current && currentPromptRef.current) {
+            saveConcept(currentPromptRef.current, data.image_url, currentJobIdRef.current);
+          }
+        } else if (data.status === 'failed') {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setStatus('error');
+          setErrorMessage('Render failed. Please try again with a different prompt.');
+        }
+      } catch (error) {
+        console.error("Polling error:", error);
+        retryCountRef.current++;
+        
+        // If we've exceeded max retries, stop polling
+        if (retryCountRef.current >= MAX_RETRIES) {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setStatus('error');
+          setErrorMessage('Connection lost. Please check your network and try again.');
+        }
+      }
+    };
+
+    // Start polling
+    poll(); // Initial poll
+    pollIntervalRef.current = setInterval(poll, POLL_INTERVAL);
+  };
+
+  const pollStatusFal = async (requestId: string) => {
+    const poll = async () => {
+      // Check timeout
+      if (Date.now() - pollStartTimeRef.current > MAX_POLL_DURATION) {
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        setStatus('error');
+        setErrorMessage('Generation timeout. The request is taking too long. Please try again.');
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/poll-fal?requestId=${requestId}`);
         
         if (!response.ok) {
           throw new Error(`Poll failed with status ${response.status}`);
