@@ -29,6 +29,7 @@ export default function ConceptArchitect() {
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   
   // Single image state
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -45,6 +46,7 @@ export default function ConceptArchitect() {
   const retryCountRef = useRef<number>(0);
   const currentJobIdRef = useRef<string | null>(null);
   const currentPromptRef = useRef<string>('');
+  const uploadedImageUrlRef = useRef<string | null>(null);
   
   // Multi-angle polling refs
   const angleJobIdsRef = useRef<Map<AngleType, string>>(new Map());
@@ -100,12 +102,19 @@ export default function ConceptArchitect() {
         const sourceImageUrl = uploadResult.url;
         console.log('Uploaded source image:', sourceImageUrl);
 
+        // Store source image URL for database save
+        uploadedImageUrlRef.current = sourceImageUrl;
+
+        // Enhance prompt to emphasize reference image
+        const enhancedPrompt = `Based on the uploaded architectural drawing: ${prompt}`;
+        console.log('Enhanced prompt:', enhancedPrompt);
+
         // Generate with the uploaded image as reference
         const response = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            user_prompt: prompt,
+            user_prompt: enhancedPrompt,
             imageUrls: [sourceImageUrl]
           }),
         });
@@ -620,18 +629,26 @@ export default function ConceptArchitect() {
 
   const saveConcept = async (prompt: string, imageUrl: string, jobId: string) => {
     try {
+      const body: any = {
+        prompt,
+        image_url: imageUrl,
+        job_id: jobId,
+        status: 'completed',
+        metadata: {
+          generation_time_ms: Date.now() - pollStartTimeRef.current,
+          mode: generationMode,
+        },
+      };
+
+      // Add source image URL for image-to-render mode
+      if (generationMode === 'image-to-render' && uploadedImageUrlRef.current) {
+        body.source_image_url = uploadedImageUrlRef.current;
+      }
+
       const response = await fetch('/api/gallery', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          image_url: imageUrl,
-          job_id: jobId,
-          status: 'completed',
-          metadata: {
-            generation_time_ms: Date.now() - pollStartTimeRef.current,
-          },
-        }),
+        body: JSON.stringify(body),
       });
       
       if (!response.ok) {
@@ -788,7 +805,27 @@ export default function ConceptArchitect() {
                 />
                 <label
                   htmlFor="image-upload"
-                  className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-neutral-700 rounded-xl hover:border-emerald-500 transition-all cursor-pointer bg-neutral-900/30"
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file && file.type.startsWith('image/')) {
+                      setUploadedImage(file);
+                      const previewUrl = URL.createObjectURL(file);
+                      setUploadedImageUrl(previewUrl);
+                    }
+                  }}
+                  className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-xl hover:border-emerald-500 transition-all cursor-pointer bg-neutral-900/30 ${
+                    isDragging ? 'border-emerald-500 bg-emerald-500/10' : 'border-neutral-700'
+                  }`}
                 >
                   {uploadedImageUrl ? (
                     <div className="relative w-full h-full p-2">
@@ -802,6 +839,7 @@ export default function ConceptArchitect() {
                           e.preventDefault();
                           setUploadedImage(null);
                           setUploadedImageUrl(null);
+                          uploadedImageUrlRef.current = null;
                         }}
                         className="absolute top-3 right-3 bg-red-600 hover:bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm"
                       >
@@ -877,7 +915,7 @@ export default function ConceptArchitect() {
         )}
 
         {/* Single Image Display */}
-        {generationMode === 'single' && imageUrl && status === 'complete' && (
+        {(generationMode === 'single' || generationMode === 'image-to-render') && imageUrl && status === 'complete' && (
           <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
             <div className="relative aspect-video w-full rounded-xl overflow-hidden border border-neutral-700 shadow-2xl">
               <img 
@@ -899,7 +937,12 @@ export default function ConceptArchitect() {
                 Download Image
               </button>
               <button
-                onClick={() => { setStatus('idle'); setImageUrl(null); setPrompt(''); }}
+                onClick={() => { 
+                  setStatus('idle'); 
+                  setImageUrl(null); 
+                  setPrompt(''); 
+                  uploadedImageUrlRef.current = null;
+                }}
                 className="flex-1 py-3 rounded-xl bg-neutral-700 hover:bg-neutral-600 text-neutral-200 font-medium transition-all"
               >
                 Generate Another

@@ -59,15 +59,27 @@ export async function POST(request: Request) {
 
     const supabase = createServerClient();
 
+    const insertData: any = {
+      prompt: body.prompt,
+      image_url: body.image_url,
+      job_id: body.job_id,
+      status: body.status || 'completed',
+      metadata: body.metadata,
+    };
+
+    // Add source_image_url for image-to-render mode
+    if (body.source_image_url) {
+      insertData.source_image_url = body.source_image_url;
+    }
+
+    // Add images array for multi-angle mode
+    if (body.images) {
+      insertData.images = body.images;
+    }
+
     const { data, error } = await supabase
       .from('concepts')
-      .insert([{
-        prompt: body.prompt,
-        image_url: body.image_url,
-        job_id: body.job_id,
-        status: body.status || 'completed',
-        metadata: body.metadata,
-      }])
+      .insert([insertData])
       .select()
       .single();
 
