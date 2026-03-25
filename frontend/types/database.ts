@@ -20,11 +20,13 @@ export interface Concept {
   job_id?: string | null;
   // New multi-angle field
   images?: AngleImage[] | null;
+  // Source image for img2img transformations
+  source_image_url?: string | null;
   status: 'completed' | 'failed' | 'partial';
   metadata?: {
     generation_time_ms?: number;
     user_agent?: string;
-    mode?: 'single' | 'multi-angle';
+    mode?: 'single' | 'multi-angle' | 'image-to-render';
     [key: string]: unknown;
   };
 }

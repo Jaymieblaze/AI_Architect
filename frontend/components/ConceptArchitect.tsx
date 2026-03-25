@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { GenerateResponse, PollResponse } from '@/types/api';
 import type { Concept, AngleImage, AngleType } from '@/types/database';
 import { generateAnglePrompts, getAngleLoadingMessage, getAngleDisplayName, ANGLE_TYPES } from '@/types/angleGeneration';
+import { uploadImage } from '@/lib/uploadImage';
 
 const LOADING_PHRASES = [
   "Drafting conceptual geometry...",
@@ -22,7 +23,12 @@ const MAX_PROMPT_LENGTH = 500;
 export default function ConceptArchitect() {
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState<'idle' | 'generating' | 'complete' | 'error'>('idle');
-  const [generationMode, setGenerationMode] = useState<'single' | 'multi-angle'>('single');
+  const [generationMode, setGenerationMode] = useState<'single' | 'multi-angle' | 'image-to-render'>('single');
+  
+  // Image-to-render state
+  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   
   // Single image state
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -65,6 +71,12 @@ export default function ConceptArchitect() {
       return;
     }
 
+    // Validate image upload for image-to-render mode
+    if (generationMode === 'image-to-render' && !uploadedImage) {
+      setErrorMessage('Please upload an image to transform.');
+      return;
+    }
+
     setStatus('generating');
     setImageUrl(null);
     setAngleImages([]);
@@ -73,7 +85,59 @@ export default function ConceptArchitect() {
     currentPromptRef.current = prompt;
     pollStartTimeRef.current = Date.now();
 
-    if (generationMode === 'single') {
+    if (generationMode === 'image-to-render') {
+      // Image-to-Render: Upload image first, then generate with imageUrls
+      try {
+        setIsUploading(true);
+        
+        // Upload the image to Supabase
+        const uploadResult = await uploadImage(uploadedImage!);
+        
+        if (!uploadResult.success || !uploadResult.url) {
+          throw new Error(uploadResult.error || 'Failed to upload image');
+        }
+
+        const sourceImageUrl = uploadResult.url;
+        console.log('Uploaded source image:', sourceImageUrl);
+
+        // Generate with the uploaded image as reference
+        const response = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            user_prompt: prompt,
+            imageUrls: [sourceImageUrl]
+          }),
+        });
+
+        setIsUploading(false);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Generation API error:', response.status, errorText);
+          throw new Error(`Backend failed to respond (${response.status}): ${errorText}`);
+        }
+        
+        const rawData = await response.json();
+        console.log("Raw response from n8n:", rawData);
+
+        const job_id = extractJobId(rawData);
+
+        if (!job_id) {
+          throw new Error(`No job ID returned. Received: ${JSON.stringify(rawData)}`);
+        }
+
+        // Start the Polling Loop
+        currentJobIdRef.current = job_id;
+        pollStatus(job_id);
+
+      } catch (error) {
+        console.error("Failed to start image-to-render generation", error);
+        setStatus('error');
+        setIsUploading(false);
+        setErrorMessage(error instanceof Error ? error.message : "Failed to process image. Please try again.");
+      }
+    } else if (generationMode === 'single') {
       // Single image generation (existing logic)
       try {
         const response = await fetch('/api/generate', {
@@ -687,13 +751,86 @@ export default function ConceptArchitect() {
             >
               4-Angle View
             </button>
+            <button
+              onClick={() => setGenerationMode('image-to-render')}
+              className={`flex-1 py-2 px-4 rounded-md transition-all text-sm font-medium ${
+                generationMode === 'image-to-render'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              Image-to-Render
+            </button>
           </div>
+
+          {/* Image Upload (only for Image-to-Render mode) */}
+          {generationMode === 'image-to-render' && (
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-neutral-300">
+                Upload Revit View (Hidden Line / Shaded)
+              </label>
+              <div className="relative">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setUploadedImage(file);
+                      // Create preview URL
+                      const previewUrl = URL.createObjectURL(file);
+                      setUploadedImageUrl(previewUrl);
+                    }
+                  }}
+                  disabled={status === 'generating' || isUploading}
+                  className="hidden"
+                  id="image-upload"
+                />
+                <label
+                  htmlFor="image-upload"
+                  className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-neutral-700 rounded-xl hover:border-emerald-500 transition-all cursor-pointer bg-neutral-900/30"
+                >
+                  {uploadedImageUrl ? (
+                    <div className="relative w-full h-full p-2">
+                      <img
+                        src={uploadedImageUrl}
+                        alt="Uploaded preview"
+                        className="w-full h-full object-contain rounded-lg"
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setUploadedImage(null);
+                          setUploadedImageUrl(null);
+                        }}
+                        className="absolute top-3 right-3 bg-red-600 hover:bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <svg className="w-10 h-10 text-neutral-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <p className="text-sm text-neutral-400">Click to upload or drag and drop</p>
+                      <p className="text-xs text-neutral-500 mt-1">PNG, JPG up to 10MB</p>
+                    </>
+                  )}
+                </label>
+              </div>
+            </div>
+          )}
 
           <div className="relative">
             <textarea
               className="w-full bg-neutral-900/50 border border-neutral-700 rounded-xl p-4 text-neutral-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-none"
               rows={4}
-              placeholder="e.g., A minimalist tropical resort with timber cladding and infinity pools..."
+              placeholder={
+                generationMode === 'image-to-render'
+                  ? "e.g., Photorealistic render with luxury materials, warm natural lighting, high-end finishes..."
+                  : "e.g., A minimalist tropical resort with timber cladding and infinity pools..."
+              }
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               disabled={status === 'generating'}
@@ -706,12 +843,20 @@ export default function ConceptArchitect() {
 
           <button
             onClick={generateConcept}
-            disabled={status === 'generating' || !prompt || prompt.trim().length < MIN_PROMPT_LENGTH}
+            disabled={
+              status === 'generating' || 
+              isUploading ||
+              !prompt || 
+              prompt.trim().length < MIN_PROMPT_LENGTH ||
+              (generationMode === 'image-to-render' && !uploadedImage)
+            }
             className="w-full py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
             title="Ctrl/Cmd + Enter"
           >
             {status === 'generating' ? (
               <span className="animate-pulse">{loadingText}</span>
+            ) : isUploading ? (
+              <span className="animate-pulse">Uploading image...</span>
             ) : (
               "Generate Concept"
             )}
