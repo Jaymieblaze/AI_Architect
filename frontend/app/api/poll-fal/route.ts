@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     }
 
     // Fal.ai queue status endpoint
-    const response = await fetch(`https://queue.fal.run/fal-ai/flux-pro/v1.1-ultra/requests/${requestId}`, {
+    const response = await fetch(`https://queue.fal.run/fal-ai/flux-pro/requests/${requestId}/status`, {
       method: 'GET',
       headers: {
         'Authorization': `Key ${falApiKey}`,
@@ -45,6 +45,8 @@ export async function GET(request: Request) {
 
     const data = await response.json();
     
+    console.log('📊 Fal.ai Poll Response:', JSON.stringify(data, null, 2));
+    
     // Fal.ai status mapping
     // Possible statuses: IN_QUEUE, IN_PROGRESS, COMPLETED, FAILED
     let mappedStatus: 'queued' | 'processing' | 'completed' | 'failed' = 'queued';
@@ -59,8 +61,27 @@ export async function GET(request: Request) {
       mappedStatus = 'failed';
     }
 
-    // Extract image URL from completed response
-    const imageUrl = data.output?.images?.[0]?.url || null;
+    // When completed, fetch the actual result from response_url
+    let imageUrl = null;
+    if (data.status === 'COMPLETED' && data.response_url) {
+      console.log('✅ Job completed, fetching result from:', data.response_url);
+      const resultResponse = await fetch(data.response_url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Key ${falApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store'
+      });
+
+      if (resultResponse.ok) {
+        const resultData = await resultResponse.json();
+        console.log('🖼️ Fal.ai Result:', JSON.stringify(resultData, null, 2));
+        imageUrl = resultData.images?.[0]?.url || null;
+      }
+    }
+    
+    console.log(`🔄 Status: ${mappedStatus}, Image URL: ${imageUrl || 'none'}`);
     
     return NextResponse.json({
       status: mappedStatus,

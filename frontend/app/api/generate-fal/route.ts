@@ -42,11 +42,11 @@ export async function POST(request: Request) {
       
       console.log(`✅ Image converted to base64 (${Math.round(base64Image.length / 1024)}KB)`);
       
-      // Add img2img parameters - HIGH image_prompt_strength preserves geometry
+      // Add img2img parameters - BALANCED image_prompt_strength preserves geometry while allowing realism
       falRequestBody.image_url = dataUri;
-      falRequestBody.image_prompt_strength = 0.95; // 0.95 = strongly preserve structure
+      falRequestBody.image_prompt_strength = 0.65; // 0.65 = preserve geometry but add realistic materials
       
-      console.log('🏗️ Image-to-render mode: HIGH structure preservation (0.95)');
+      console.log('🏗️ Image-to-render mode: BALANCED structure preservation (0.65)');
     }
 
     if (seed !== undefined && seed !== null) {

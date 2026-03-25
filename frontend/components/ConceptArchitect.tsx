@@ -105,12 +105,12 @@ export default function ConceptArchitect() {
         // Store source image URL for database save
         uploadedImageUrlRef.current = sourceImageUrl;
 
-        // Enhance prompt to emphasize preserving geometry
-        const enhancedPrompt = `Photorealistic architectural render of this building: ${prompt}. Maintain exact building geometry and perspective from the reference image.`;
+        // Enhance prompt emphasizing EXACT camera angle/viewpoint preservation
+        const enhancedPrompt = `CRITICAL: This is an architectural front elevation view (orthogonal projection). Maintain the EXACT camera angle - straight-on front view only, NO side angles, NO perspective distortion. Keep this as a flat front facade view. Only add photorealistic materials (${prompt}), lighting, and landscaping. Do NOT change to a 3D angled perspective. Keep the same orthogonal front-facing viewpoint as the reference image.`;
         console.log('Enhanced prompt:', enhancedPrompt);
 
-        // Generate with the uploaded image as reference (using Fal.ai Flux Ultra)
-        const response = await fetch('/api/generate-fal', {
+        // Generate with the uploaded image as reference (using Krea Nano Banana Pro)
+        const response = await fetch('/api/generate-krea', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -129,17 +129,17 @@ export default function ConceptArchitect() {
         }
         
         const rawData = await response.json();
-        console.log("Raw response from Fal.ai:", rawData);
+        console.log("Raw response from Krea:", rawData);
 
-        const requestId = rawData.request_id || rawData.job_id;
+        const job_id = extractJobId(rawData);
 
-        if (!requestId) {
-          throw new Error(`No request ID returned. Received: ${JSON.stringify(rawData)}`);
+        if (!job_id) {
+          throw new Error(`No job ID returned. Received: ${JSON.stringify(rawData)}`);
         }
 
-        // Start the Polling Loop (use Fal.ai polling endpoint)
-        currentJobIdRef.current = requestId;
-        pollStatusFal(requestId);
+        // Start the Polling Loop (use Krea polling endpoint)
+        currentJobIdRef.current = job_id;
+        pollStatus(job_id);
 
       } catch (error) {
         console.error("Failed to start image-to-render generation", error);
@@ -915,6 +915,16 @@ export default function ConceptArchitect() {
                     </>
                   )}
                 </label>
+              </div>
+              
+              {/* Disclaimer */}
+              <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <svg className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="text-xs text-amber-200">
+                  <strong>AI-Enhanced Visualization:</strong> The AI may adjust perspective for visual appeal. For strict architectural accuracy, upload 3D perspective views rather than flat elevations.
+                </div>
               </div>
             </div>
           )}

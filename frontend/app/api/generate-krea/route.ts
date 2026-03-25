@@ -47,8 +47,7 @@ export async function POST(request: Request) {
       // Use Nano Banana Pro for img2img (docs example uses this)
       endpoint = 'https://api.krea.ai/generate/image/google/nano-banana-pro';
       kreaRequestBody.imageUrls = [dataUri];
-      kreaRequestBody.strength = 0.5; // Try lower strength to preserve geometry (0=preserve, 1=ignore)
-      kreaRequestBody.denoise = 0.5; // Control how much to denoise/change the image
+      kreaRequestBody.prompt = `Reference image shows exact building geometry to preserve. ${user_prompt}`; // Emphasize reference importance
       // Note: Nano Banana Pro doesn't use steps parameter
     } else {
       // Use Flux for text-to-image
