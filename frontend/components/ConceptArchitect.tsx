@@ -287,7 +287,10 @@ export default function ConceptArchitect() {
               // If we have exterior URL, use it as reference for img2img
               if (exteriorUrl) {
                 requestBody.imageUrls = [exteriorUrl];
-                console.log(`Generating ${angle} with seed + exterior reference`);
+                // CRITICAL: imagePromptStrengths controls reference adherence (0-100 scale)
+                // 80 = strong adherence (from Krea's official workflow examples)
+                requestBody.imagePromptStrengths = [80];
+                console.log(`Generating ${angle} with seed + exterior reference (strength: 80)`);
               }
             }
             

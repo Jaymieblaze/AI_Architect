@@ -64,6 +64,10 @@ The current JSON Body probably looks like this:
   // Forward imageUrls if provided (for img2img reference)
   if ($json.body.imageUrls && Array.isArray($json.body.imageUrls) && $json.body.imageUrls.length > 0) {
     body.imageUrls = $json.body.imageUrls;
+    
+    // CRITICAL: imagePromptStrengths controls reference adherence (0-100 scale)
+    // 80 = strong adherence (from Krea's own workflow examples)
+    body.imagePromptStrengths = $json.body.imagePromptStrengths || [80];
   }
   
   return body;
