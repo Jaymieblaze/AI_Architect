@@ -1,37 +1,51 @@
-# n8n Workflow Update Instructions
+# 🔧 n8n Workflow Update Instructions - Multi-Angle Coherence
 
-## ⚠️ IMPORTANT: Frontend is in Backward-Compatible Mode
+## ⚠️ CURRENT STATUS
 
-The multi-angle feature currently works **without** these updates, but you'll get **4 different buildings**.
-
-To get **4 views of the SAME building**, follow these 3 steps:
+**Frontend**: ✅ Ready (seed + imageUrls enabled)  
+**n8n Workflow**: ❌ Needs manual update  
+**Result**: Currently generates **4 different buildings** instead of 4 views of the same building
 
 ---
 
-## Step 1: Update n8n Workflow
+## 🎯 Goal: Get 4 Coherent Views of the SAME Building
 
-### Instructions:
+The multi-angle feature needs the n8n workflow to forward `seed` and `imageUrls` parameters to the Krea API.
 
-1. **Open n8n** at http://localhost:5678
-2. **Open your workflow** ("My workflow")
-3. **Click on the "Krea AI Generator" node** (HTTP Request node)
-4. **Update the JSON Body** field
+---
 
-#### Current JSON Body:
+## 📋 Step-by-Step Fix (5 minutes)
+
+### Step 1: Open n8n Workflow Editor
+
+1. Go to http://localhost:5678
+2. Click on **"My workflow"** to open it
+3. You should see nodes: Webhook → Krea AI Generator → Respond to Webhook
+
+### Step 2: Update the HTTP Request Node
+
+1. **Click on the "Krea AI Generator" node** (the HTTP Request node that calls Krea API)
+2. Scroll down to find the **"Body Parameters"** or **"JSON Body"** field
+
+### Step 3: Replace JSON Body with Expression
+
+The current JSON Body probably looks like this:
+
 ```json
 {
-  "prompt": "Architectural render of {{$json.body.user_prompt}}, photorealistic architectural photography, parametric design elements, natural lighting, high-end materials, 8k resolution, highly detailed, professional architectural visualization",
+  "prompt": "Architectural render of {{$json.body.user_prompt}}, photorealistic...",
   "width": 1024,
   "height": 576,
   "steps": 28
 }
 ```
 
-#### Option A: Use Expression Mode (RECOMMENDED)
+**Replace it with this Expression Mode code:**
 
-1. Click the **gear icon** next to "JSON Body" field
-2. Select **"Expression"** mode
-3. Paste this code:
+1. Click the **gear icon** ⚙️ next to "JSON Body" field
+2. Select **"Expression"** mode (instead of "Fixed")
+3. **Delete everything** in the field
+4. **Paste this code:**
 
 ```javascript
 ={{
@@ -42,10 +56,12 @@ To get **4 views of the SAME building**, follow these 3 steps:
     "steps": 28
   };
   
-  if ($json.body.seed) {
+  // Forward seed if provided (for multi-angle coherence)
+  if ($json.body.seed !== undefined && $json.body.seed !== null) {
     body.seed = $json.body.seed;
   }
   
+  // Forward imageUrls if provided (for img2img reference)
   if ($json.body.imageUrls && Array.isArray($json.body.imageUrls) && $json.body.imageUrls.length > 0) {
     body.imageUrls = $json.body.imageUrls;
   }
@@ -54,49 +70,97 @@ To get **4 views of the SAME building**, follow these 3 steps:
 }}
 ```
 
-#### Option B: Use JSON Mode (simpler but less flexible)
+### Step 4: Save the Workflow
 
-If you prefer JSON mode, use this simpler version that doesn't include conditionals:
+1. Click **"Save"** button in the top-right corner
+2. The workflow is now updated! ✅
 
-```json
-{
-  "prompt": "{{$json.body.user_prompt}}",
-  "width": 1024,
-  "height": 576,
-  "steps": 28
-}
+---
+
+## ✅ Verification
+
+### Console Logs to Watch
+
+After the update, when you generate multi-angle views, you should see in the browser console:
+
+```
+Using seed for coherence: 1234567890
+Generating exterior with seed + exterior reference
 ```
 
-**Note:** This JSON mode version only sends the prompt. The seed/imageUrls won't be passed, so you'll get 4 different buildings. For coherent multi-angle generation, use **Option A (Expression Mode)**.
+### Expected Behavior
 
-5. **Save the workflow** in n8n
-
----
-
-## Step 2: Enable Advanced Features in Frontend
-
-After updating the n8n workflow, enable seed + img2img in the frontend:
-
-1. Open `frontend/components/ConceptArchitect.tsx`
-2. Find the line (around line 157):
-   ```typescript
-   const useAdvancedFeatures = false; // Set to true after updating n8n
-   ```
-3. Change it to:
-   ```typescript
-   const useAdvancedFeatures = true; // n8n workflow updated!
-   ```
-4. Save the file - Next.js will auto-reload
+- **Before fix**: 4 completely different building designs
+- **After fix**: 4 views (exterior, interior, aerial, detail) of the SAME building
 
 ---
 
-## Step 3: Test!
+## 🧪 Test the Fix
 
-1. Go to your frontend app (should auto-reload)
-2. Toggle to "4-Angle View"
-3. Enter a simple prompt like: "minimalist beach villa"
-4. Generate
-5. You should see 4 coherent views of the SAME building! 🎉
+1. Go to your frontend app (http://localhost:3000)
+2. Toggle to **"4-Angle View"** mode
+3. Enter a simple prompt: `"modern glass beach house"`
+4. Click **"Generate Concept"**
+5. Wait for all 4 images to generate
+6. **Result**: All 4 angles should show the same building architecture! 🎉
+
+---
+
+## 🔍 Troubleshooting
+
+### Still getting 4 different buildings?
+
+1. **Check n8n workflow was saved**: Refresh the workflow in n8n to confirm changes persisted
+2. **Check Expression mode**: Make sure the field shows `=` icon (Expression) not `{}` (JSON)
+3. **Check console logs**: Open browser DevTools → Console, look for "Using seed for coherence: [number]"
+4. **Restart n8n**: If needed, restart the Docker container
+
+### Images not generating at all?
+
+1. **Check n8n is running**: Docker container should be active on port 5678
+2. **Check webhook URL**: In `.env.local`, verify `N8N_WEBHOOK_URL` points to the correct workflow
+3. **Check Krea API key**: Verify `KREA_API_KEY` is set in n8n workflow credentials
+
+---
+
+## 📝 Technical Details
+
+### What Changed?
+
+**Before**: n8n workflow only forwarded `user_prompt`  
+**After**: n8n workflow forwards `user_prompt`, `seed`, and `imageUrls`
+
+### How Multi-Angle Works Now:
+
+1. Frontend generates a **random seed** (e.g., 1234567890)
+2. Frontend sends request with `{ user_prompt, seed }` to n8n
+3. n8n forwards **both** to Krea API
+4. Krea uses the seed to generate **consistent** architecture across all 4 angles
+
+### Image-to-Image Reference (Future Enhancement):
+
+The `imageUrls` parameter enables the "exterior-first" strategy:
+1. Generate exterior view first
+2. Use exterior image as reference for other 3 angles
+3. Ensures even better coherence (same exact building)
+
+Currently, this generates 4 angles **in parallel** with the same seed for speed.
+
+---
+
+## ✨ Success Criteria
+
+After this update, you should be able to:
+
+- ✅ Generate 4-angle views with **consistent building design**
+- ✅ See the same architectural style, colors, and proportions across all angles
+- ✅ Use multi-angle mode for professional architectural presentations
+
+---
+
+## 📌 Note
+
+The frontend code has already been updated to send `seed` and `imageUrls`. This n8n workflow update is the **only remaining step** to enable multi-angle coherence.
 
 ---
 
