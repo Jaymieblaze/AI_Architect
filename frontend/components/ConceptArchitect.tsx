@@ -109,12 +109,13 @@ export default function ConceptArchitect() {
         const enhancedPrompt = `Based on the uploaded architectural drawing: ${prompt}`;
         console.log('Enhanced prompt:', enhancedPrompt);
 
-        // Generate with the uploaded image as reference
-        const response = await fetch('/api/generate', {
+        // Generate with the uploaded image as reference (using direct Krea API route)
+        const response = await fetch('/api/generate-krea', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             user_prompt: enhancedPrompt,
+            seed: Math.floor(Math.random() * 4294967295),
             imageUrls: [sourceImageUrl]
           }),
         });
