@@ -5,9 +5,12 @@
 
 import type { AngleType } from './database';
 
-export const ANGLE_TYPES: AngleType[] = ['exterior', 'interior', 'aerial', 'detail'];
+// Preset angle types (strict, for indexing)
+export type PresetAngleType = 'exterior' | 'interior' | 'aerial' | 'detail';
 
-export const ANGLE_DESCRIPTORS = {
+export const ANGLE_TYPES: PresetAngleType[] = ['exterior', 'interior', 'aerial', 'detail'];
+
+export const ANGLE_DESCRIPTORS: Record<PresetAngleType, { prefix: string; context: string }> = {
   exterior: {
     prefix: 'exterior architectural view',
     context: 'showing full building facade, main entrance, and surrounding context',
@@ -79,10 +82,10 @@ export function extractArchitecturalDNA(prompt: string): string {
  * Generates 4 angle-specific prompts with shared architectural DNA
  * Uses consistent identifier to encourage same building across angles
  */
-export function generateAnglePrompts(userPrompt: string): Record<AngleType, string> {
+export function generateAnglePrompts(userPrompt: string): Record<PresetAngleType, string> {
   const dna = extractArchitecturalDNA(userPrompt);
   
-  const prompts: Record<AngleType, string> = {
+  const prompts: Record<PresetAngleType, string> = {
     exterior: '',
     interior: '',
     aerial: '',
@@ -114,26 +117,28 @@ export function generateAnglePrompts(userPrompt: string): Record<AngleType, stri
  * Get display name for angle type
  */
 export function getAngleDisplayName(angle: AngleType): string {
-  const names = {
+  const names: Record<PresetAngleType, string> = {
     exterior: 'Exterior View',
     interior: 'Interior Perspective',
     aerial: 'Aerial Overview',
     detail: 'Architectural Detail',
   };
-  return names[angle];
+  // For custom angles (string type), return as-is
+  return names[angle as PresetAngleType] || angle;
 }
 
 /**
  * Get loading message for angle
  */
 export function getAngleLoadingMessage(angle: AngleType): string {
-  const messages = {
+  const messages: Record<PresetAngleType, string> = {
     exterior: 'Rendering exterior facade...',
     interior: 'Drafting interior spaces...',
     aerial: 'Capturing aerial perspective...',
     detail: 'Defining architectural details...',
   };
-  return messages[angle];
+  // For custom angles (string type), return generic message
+  return messages[angle as PresetAngleType] || `Generating ${angle}...`;
 }
 
 /**
