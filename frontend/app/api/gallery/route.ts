@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     const { data, error, count } = await supabase
       .from('concepts')
       .select('*', { count: 'exact' })
-      .eq('status', 'completed')
+      .in('status', ['completed', 'partial']) // Include partial results (some angles succeeded)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 

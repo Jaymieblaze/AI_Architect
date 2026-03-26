@@ -708,6 +708,16 @@ export default function ConceptArchitect() {
       const response = await fetch('/api/gallery?limit=10');
       if (response.ok) {
         const data = await response.json();
+        console.log('Gallery data fetched:', data.concepts?.length, 'concepts');
+        // Debug: Log first concept structure
+        if (data.concepts && data.concepts.length > 0) {
+          console.log('First concept structure:', {
+            hasImages: !!data.concepts[0].images,
+            imagesLength: data.concepts[0].images?.length,
+            hasImageUrl: !!data.concepts[0].image_url,
+            prompt: data.concepts[0].prompt?.substring(0, 50),
+          });
+        }
         setHistory(data.concepts || []);
       }
     } catch (error) {
@@ -768,23 +778,37 @@ export default function ConceptArchitect() {
       const anyCompleted = images.some(img => img.status === 'completed');
       const allCompleted = images.every(img => img.status === 'completed');
       
+      const payload = {
+        prompt,
+        images,
+        status: allCompleted ? 'completed' : anyCompleted ? 'partial' : 'failed',
+        metadata: {
+          generation_time_ms: Date.now() - pollStartTimeRef.current,
+          mode: generationMode, // Use actual mode (multi-angle or custom-angles)
+          angle_count: images.length,
+        },
+      };
+      
+      console.log('Saving multi-angle concept:', {
+        prompt: prompt.substring(0, 50),
+        imageCount: images.length,
+        completedCount: images.filter(i => i.status === 'completed').length,
+        firstImageUrl: images[0]?.url?.substring(0, 50),
+        mode: generationMode,
+      });
+      
       const response = await fetch('/api/gallery', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          images,
-          status: allCompleted ? 'completed' : anyCompleted ? 'partial' : 'failed',
-          metadata: {
-            generation_time_ms: Date.now() - pollStartTimeRef.current,
-            mode: 'multi-angle',
-          },
-        }),
+        body: JSON.stringify(payload),
       });
       
       if (!response.ok) {
-        console.warn('Failed to save multi-angle concept:', await response.text());
+        const errorText = await response.text();
+        console.warn('Failed to save multi-angle concept:', errorText);
       } else {
+        const saved = await response.json();
+        console.log('Multi-angle concept saved successfully:', saved.id);
         // Refresh history after successful save
         fetchHistory();
       }
@@ -797,18 +821,39 @@ export default function ConceptArchitect() {
     setPrompt(concept.prompt);
     setErrorMessage(null);
     
-    // Check if this is a multi-angle concept
+    // Check if this is a multi-angle or custom-angle concept
     if (concept.images && concept.images.length > 0) {
-      setGenerationMode('multi-angle');
+      // Detect mode from metadata (defaults to 'multi-angle' if not specified)
+      const mode = concept.metadata?.mode as typeof generationMode;
+      if (mode === 'custom-angles' || mode === 'multi-angle') {
+        setGenerationMode(mode);
+      } else {
+        setGenerationMode('multi-angle');
+      }
+      
+      console.log('Loading from history:', {
+        mode: mode || 'multi-angle',
+        imageCount: concept.images.length,
+        hasUrls: concept.images.every(img => !!img.url),
+        firstUrl: concept.images[0]?.url?.substring(0, 50),
+      });
+      
       setAngleImages(concept.images);
       setImageUrl(null);
-    } else {
+      setStatus('complete');
+    } else if (concept.image_url) {
+      // Single image concept
       setGenerationMode('single');
-      setImageUrl(concept.image_url || null);
+      setImageUrl(concept.image_url);
       setAngleImages([]);
+      setStatus('complete');
+      console.log('Loading single image from history:', concept.image_url.substring(0, 50));
+    } else {
+      // No images found
+      console.warn('Concept has no images:', concept.id);
+      setStatus('idle');
     }
     
-    setStatus('complete');
     currentJobIdRef.current = concept.job_id || null;
     currentPromptRef.current = concept.prompt;
   };
@@ -1134,8 +1179,8 @@ export default function ConceptArchitect() {
         )}
 
         {/* Multi-Angle or Custom-Angle Grid Display */}
-        {(generationMode === 'multi-angle' || generationMode === 'custom-angles') && angleImages.length > 0 && (
-          <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
+        {(generationMode === 'multi-angle' || generationMode === 'custom-angles') && angleImages.length > 0 && status === 'complete' && (
+          <div className="mt-8 animate-in fade-in-slide-in-from-bottom-4 duration-700 ease-out">
             <div className={`grid gap-4 ${angleImages.length <= 2 ? 'grid-cols-1 md:grid-cols-2' : angleImages.length === 3 ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-2'}`}>
               {angleImages.map((angleData) => {
                 const angle = angleData.angle;
@@ -1438,12 +1483,21 @@ export default function ConceptArchitect() {
                         // Multi-angle concept: show 2x2 grid
                         <div className="grid grid-cols-2 gap-0.5 w-full h-full">
                           {concept.images.slice(0, 4).map((img, idx) => (
-                            <div key={idx} className="relative">
+                            <div key={idx} className="relative bg-neutral-900">
                               {img.status === 'completed' && img.url ? (
                                 <img 
                                   src={img.url} 
-                                  alt={img.angle}
+                                  alt={img.customLabel || img.angle}
                                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  onError={(e) => {
+                                    console.error('Gallery image failed to load:', img.url);
+                                    e.currentTarget.style.display = 'none';
+                                    const parent = e.currentTarget.parentElement;
+                                    if (parent) {
+                                      parent.innerHTML = '<div class="w-full h-full flex items-center justify-center"><span class="text-neutral-600 text-xs">✕</span></div>';
+                                    }
+                                  }}
+                                  loading="lazy"
                                 />
                               ) : (
                                 <div className="w-full h-full bg-neutral-900 flex items-center justify-center">
@@ -1455,11 +1509,26 @@ export default function ConceptArchitect() {
                         </div>
                       ) : (
                         // Single image concept
-                        <img 
-                          src={concept.image_url || ''} 
-                          alt={concept.prompt}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
+                        concept.image_url ? (
+                          <img 
+                            src={concept.image_url} 
+                            alt={concept.prompt}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={(e) => {
+                              console.error('Gallery single image failed to load:', concept.image_url);
+                              e.currentTarget.style.display = 'none';
+                              const parent = e.currentTarget.parentElement;
+                              if (parent) {
+                                parent.innerHTML = '<div class="w-full h-full bg-neutral-900 flex items-center justify-center"><span class="text-neutral-600 text-xs">Image unavailable</span></div>';
+                              }
+                            }}
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-neutral-900 flex items-center justify-center">
+                            <span className="text-neutral-600 text-xs">No image</span>
+                          </div>
+                        )
                       )}
                     </div>
                     
