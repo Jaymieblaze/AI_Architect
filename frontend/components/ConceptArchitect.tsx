@@ -210,9 +210,10 @@ export default function ConceptArchitect() {
             console.warn('First angle failed, generating other angles without reference');
           }
           
-          // Generate other angles with first angle as reference
+          // Generate other angles with first angle as reference (sequential to avoid rate limits)
           const otherAngles = anglePromptsList.slice(1);
-          const otherPromises = otherAngles.map(async ({ angle, prompt, customLabel }) => {
+          
+          for (const { angle, prompt, customLabel } of otherAngles) {
             try {
               const requestBody: any = {
                 user_prompt: prompt,
@@ -246,6 +247,10 @@ export default function ConceptArchitect() {
               
               angleJobIdsRef.current.set(angle as any, job_id);
               pollAngleStatus(angle as any, job_id);
+              
+              // Add delay between requests to avoid rate limiting
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              
             } catch (error) {
               console.error(`Failed to generate ${customLabel || angle}:`, error);
               setAngleImages(prev => 
@@ -256,9 +261,8 @@ export default function ConceptArchitect() {
                 )
               );
             }
-          });
+          }
           
-          await Promise.all(otherPromises);
           return;
         }
 
@@ -450,8 +454,8 @@ export default function ConceptArchitect() {
           console.warn('First angle failed, generating other angles without reference');
         }
         
-        // Step 2: Generate other angles with first angle as reference
-        const otherPromises = otherAnglesList.map(async ({ angle, prompt, customLabel }) => {
+        // Step 2: Generate other angles with first angle as reference (sequential to avoid rate limits)
+        for (const { angle, prompt, customLabel } of otherAnglesList) {
           try {
             const requestBody: any = {
               user_prompt: prompt,
@@ -489,17 +493,16 @@ export default function ConceptArchitect() {
             angleJobIdsRef.current.set(angle as any, job_id);
             pollAngleStatus(angle as any, job_id);
             
-            return { angle, job_id };
+            // Add delay between requests to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
           } catch (error) {
             console.error(`Failed to start ${angle} generation:`, error);
             setAngleImages(prev => prev.map(img => 
               img.angle === angle ? { ...img, status: 'failed' as const } : img
             ));
-            return { angle, job_id: null };
           }
-        });
-        
-        await Promise.all(otherPromises);
+        }
         
       } catch (error) {
         console.error('Multi-angle generation error:', error);
