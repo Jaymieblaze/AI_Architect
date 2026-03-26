@@ -97,8 +97,9 @@ async function generateSingleImage(
   
   if (imageUrls && Array.isArray(imageUrls) && imageUrls.length > 0) {
     // Download image and convert to base64 (Krea requires base64 data URIs)
-    console.log('📥 Downloading image from:', imageUrls[0]);
-    const imageResponse = await fetch(imageUrls[0]);
+    const imageUrl = imageUrls[0]!; // Safe: we checked length > 0
+    console.log('📥 Downloading image from:', imageUrl);
+    const imageResponse = await fetch(imageUrl);
     if (!imageResponse.ok) {
       throw new Error(`Failed to download image: ${imageResponse.status}`);
     }
