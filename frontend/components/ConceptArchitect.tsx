@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { GenerateResponse, PollResponse } from '@/types/api';
 import type { Concept, AngleImage, AngleType } from '@/types/database';
 import { generateAnglePrompts, generateCustomAnglePrompts, getAngleLoadingMessage, getAngleDisplayName, ANGLE_TYPES } from '@/types/angleGeneration';
-import { uploadImage } from '@/lib/uploadImage';
+import { fileToBase64 } from '@/lib/fileToBase64';
 
 const LOADING_PHRASES = [
   "Drafting conceptual geometry...",
@@ -122,21 +122,16 @@ export default function ConceptArchitect() {
     pollStartTimeRef.current = Date.now();
 
     if (generationMode === 'image-to-render') {
-      // Image-to-Render: Upload image first, then generate with imageUrls
+      // Image-to-Render: Convert image to base64 and send directly to Krea
       try {
         setIsUploading(true);
         
-        // Upload the image to Supabase
-        const uploadResult = await uploadImage(uploadedImage!);
+        // Convert uploaded image to base64 data URL
+        const base64Image = await fileToBase64(uploadedImage!);
+        console.log('Converted image to base64 (', (base64Image.length / 1024).toFixed(1), 'KB)');
         
-        if (!uploadResult.success || !uploadResult.url) {
-          throw new Error(uploadResult.error || 'Failed to upload image');
-        }
-
-        const sourceImageUrl = uploadResult.url;
-        console.log('Uploaded source image:', sourceImageUrl);
-
-        // Store source image URL for database save
+        // Store base64 for generation (Krea accepts data URLs)
+        const sourceImageUrl = base64Image;
         uploadedImageUrlRef.current = sourceImageUrl;
         
         setIsUploading(false);
