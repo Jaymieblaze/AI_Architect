@@ -86,10 +86,11 @@ async function generateSingleImage(
   seed?: number
 ): Promise<string> {
   // Build the request body for Krea API
+  // Using n8n workflow resolution for better quality
   const kreaRequestBody: any = {
     prompt,
-    width: 1024,
-    height: 576,
+    width: 1376,
+    height: 768,
   };
 
   // Determine endpoint and parameters based on whether img2img is needed
@@ -156,7 +157,8 @@ async function generateSingleImage(
 }
 
 /**
- * Generate multiple angles via KREA API
+ * Generate multiple angles via KREA API with sequential image references
+ * Matches n8n workflow strategy: each angle uses previous completed angle(s) as reference
  */
 async function generateMultiAngle(
   apiKey: string,
@@ -165,23 +167,82 @@ async function generateMultiAngle(
   seed?: number
 ): Promise<Array<{ angle: AngleType; job_id: string }>> {
   const baseSeed = seed || Math.floor(Math.random() * 1000000);
-  
   const results: Array<{ angle: AngleType; job_id: string }> = [];
+  const completedImageUrls: string[] = [];
   
-  // Generate sequentially with delays to avoid rate limiting
+  // Generate angles sequentially, using previous completed angles as references
   for (let index = 0; index < PRESET_ANGLES.length; index++) {
     const angle = PRESET_ANGLES[index]!; // Safe: we're iterating within bounds
     const anglePrompt = `${prompt}, ${angle} view, architectural visualization`;
     const angleSeed = baseSeed + index;
     
-    const jobId = await generateSingleImage(apiKey, anglePrompt, imageUrls, angleSeed);
+    // For first angle: use input imageUrls (if provided) or generate from text
+    // For subsequent angles: use previously completed angle(s) as reference
+    let referenceUrls = imageUrls;
+    if (index > 0 && completedImageUrls.length > 0) {
+      // Use the most recent completed angle as primary reference
+      // For detail view (index 3), could use multiple previous angles
+      referenceUrls = index === 3 && completedImageUrls.length >= 2
+        ? [completedImageUrls[0]!, completedImageUrls[2]!] // exterior + aerial
+        : [completedImageUrls[index - 1]!]; // previous angle
+    }
+    
+    const jobId = await generateSingleImage(apiKey, anglePrompt, referenceUrls, angleSeed);
     results.push({ angle, job_id: jobId });
     
-    // Add 2 second delay between requests to avoid rate limiting (except after last one)
+    // Poll until this angle completes before starting next one
+    // This ensures we have the image URL to use as reference
     if (index < PRESET_ANGLES.length - 1) {
+      console.log(`⏳ Waiting for ${angle} to complete before generating next angle...`);
+      const completedUrl = await pollUntilComplete(apiKey, jobId);
+      completedImageUrls.push(completedUrl);
+      
+      // Add 2 second delay between requests to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
 
   return results;
+}
+
+/**
+ * Poll a KREA job until it completes and return the image URL
+ */
+async function pollUntilComplete(
+  apiKey: string,
+  jobId: string,
+  maxAttempts: number = 60
+): Promise<string> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const response = await fetch(`https://api.krea.ai/jobs/${jobId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to poll job ${jobId}: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.status === 'completed') {
+      // Construct image URL
+      const imageUrl = data.result?.urls?.[0] || `https://app-uploads.krea.ai/public/${jobId}-image.jpeg`;
+      console.log(`✅ Job ${jobId} completed: ${imageUrl}`);
+      return imageUrl;
+    }
+    
+    if (data.status === 'failed') {
+      throw new Error(`Job ${jobId} failed`);
+    }
+    
+    // Wait 2 seconds before next poll
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  
+  throw new Error(`Job ${jobId} timed out after ${maxAttempts} attempts`);
 }

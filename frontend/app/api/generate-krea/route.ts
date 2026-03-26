@@ -21,10 +21,11 @@ export async function POST(request: Request) {
     }
 
     // Build the request body for Krea API
+    // Using n8n workflow resolution for better quality
     const kreaRequestBody: any = {
       prompt: user_prompt,
-      width: 1024,
-      height: 576,
+      width: 1376,
+      height: 768,
     };
 
     // Determine endpoint and parameters based on whether img2img is needed
