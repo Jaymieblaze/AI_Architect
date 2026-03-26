@@ -1343,7 +1343,7 @@ export default function ConceptArchitect() {
         )}
 
         {/* Single Image Display */}
-        {(generationMode === 'single' || generationMode === 'image-to-render') && imageUrl && status === 'complete' && (
+        {(generationMode === 'single' || (generationMode === 'image-to-render' && !uploadMultiAngle)) && imageUrl && status === 'complete' && (
           <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
             <div className="relative aspect-video w-full rounded-xl overflow-hidden border border-neutral-700 shadow-2xl">
               <img 
@@ -1369,6 +1369,9 @@ export default function ConceptArchitect() {
                   setStatus('idle'); 
                   setImageUrl(null); 
                   setPrompt(''); 
+                  setUploadMultiAngle(false);
+                  setUploadedImage(null);
+                  setUploadedImageUrl(null);
                   uploadedImageUrlRef.current = null;
                 }}
                 className="flex-1 py-3 rounded-xl bg-neutral-700 hover:bg-neutral-600 text-neutral-200 font-medium transition-all"
@@ -1380,7 +1383,7 @@ export default function ConceptArchitect() {
         )}
 
         {/* Multi-Angle or Custom-Angle Grid Display */}
-        {(generationMode === 'multi-angle' || generationMode === 'custom-angles') && angleImages.length > 0 && status === 'complete' && (
+        {(generationMode === 'multi-angle' || generationMode === 'custom-angles' || (generationMode === 'image-to-render' && uploadMultiAngle)) && angleImages.length > 0 && status === 'complete' && (
           <div className="mt-8 animate-in fade-in-slide-in-from-bottom-4 duration-700 ease-out">
             <div className={`grid gap-4 ${angleImages.length <= 2 ? 'grid-cols-1 md:grid-cols-2' : angleImages.length === 3 ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-2'}`}>
               {angleImages.map((angleData) => {
@@ -1633,7 +1636,15 @@ export default function ConceptArchitect() {
                   Download All
                 </button>
                 <button
-                  onClick={() => { setStatus('idle'); setAngleImages([]); setPrompt(''); }}
+                  onClick={() => { 
+                    setStatus('idle'); 
+                    setAngleImages([]); 
+                    setPrompt('');
+                    setUploadMultiAngle(false);
+                    setUploadedImage(null);
+                    setUploadedImageUrl(null);
+                    uploadedImageUrlRef.current = null;
+                  }}
                   className="flex-1 py-3 rounded-xl bg-neutral-700 hover:bg-neutral-600 text-neutral-200 font-medium transition-all"
                 >
                   Generate Another
