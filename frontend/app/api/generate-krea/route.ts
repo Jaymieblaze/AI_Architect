@@ -47,6 +47,11 @@ export async function POST(request: Request) {
       // Use Nano Banana Pro for img2img (docs example uses this)
       endpoint = 'https://api.krea.ai/generate/image/google/nano-banana-pro';
       kreaRequestBody.imageUrls = [dataUri];
+      
+      // CRITICAL: imagePromptStrengths controls adherence (0-100 scale)
+      // From Krea's own workflow: 80 = strong reference adherence
+      kreaRequestBody.imagePromptStrengths = [80];
+      
       kreaRequestBody.prompt = `Reference image shows exact building geometry to preserve. ${user_prompt}`; // Emphasize reference importance
       // Note: Nano Banana Pro doesn't use steps parameter
     } else {
