@@ -149,6 +149,9 @@ async function generateSingleImage(
   console.log('✅ KREA API Response:', JSON.stringify(data, null, 2));
   
   // Return the job_id from KREA's response
+  if (!data.job_id) {
+    throw new Error('KREA API did not return a job_id');
+  }
   return data.job_id;
 }
 
