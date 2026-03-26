@@ -23,7 +23,9 @@ const MAX_PROMPT_LENGTH = 500;
 export default function ConceptArchitect() {
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState<'idle' | 'generating' | 'complete' | 'error'>('idle');
-  const [generationMode, setGenerationMode] = useState<'single' | 'multi-angle' | 'custom-angles' | 'image-to-render'>('single');
+  const [workflowMode, setWorkflowMode] = useState<'text' | 'upload'>('text');
+  const [multiAngle, setMultiAngle] = useState(false);
+  const [angleType, setAngleType] = useState<'preset' | 'custom'>('preset');
   const [customAngles, setCustomAngles] = useState<Array<{ name: string; description: string }>>([
     { name: 'Street Level', description: 'street level view' },
     { name: 'Entrance Closeup', description: 'entrance closeup architectural detail' },
@@ -35,8 +37,6 @@ export default function ConceptArchitect() {
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadMultiAngle, setUploadMultiAngle] = useState(false);
-  const [uploadAngleType, setUploadAngleType] = useState<'preset' | 'custom'>('preset');
   
   // Single image state
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -88,7 +88,7 @@ export default function ConceptArchitect() {
 
   const generateConcept = async () => {
     // For multi-angle from upload, prompt is optional (but helpful for style guidance)
-    const isMultiAngleUpload = generationMode === 'image-to-render' && uploadedImage && uploadMultiAngle;
+    const isMultiAngleUpload = workflowMode === 'upload' && uploadedImage && multiAngle;
     
     if (!isMultiAngleUpload && (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH)) {
       setErrorMessage(`Please enter at least ${MIN_PROMPT_LENGTH} characters to describe your concept.`);
@@ -100,8 +100,8 @@ export default function ConceptArchitect() {
       return;
     }
 
-    // Validate image upload for image-to-render mode
-    if (generationMode === 'image-to-render' && !uploadedImage) {
+    // Validate image upload for upload workflow mode
+    if (workflowMode === 'upload' && !uploadedImage) {
       setErrorMessage('Please upload an image to transform.');
       return;
     }
@@ -121,8 +121,8 @@ export default function ConceptArchitect() {
     currentPromptRef.current = effectivePrompt;
     pollStartTimeRef.current = Date.now();
 
-    if (generationMode === 'image-to-render') {
-      // Image-to-Render: Convert image to base64 and send directly to Krea
+    if (workflowMode === 'upload') {
+      // Upload Workflow: Convert image to base64 and send directly to Krea
       try {
         setIsUploading(true);
         
@@ -137,14 +137,14 @@ export default function ConceptArchitect() {
         setIsUploading(false);
 
         // CHECK: Multi-angle from upload?
-        if (uploadMultiAngle) {
+        if (multiAngle) {
           // Multi-angle generation from uploaded image
-          console.log(`Generating multiple angles from uploaded image (${uploadAngleType} mode)`);
+          console.log(`Generating multiple angles from uploaded image (${angleType} mode)`);
           
           // Prepare angle prompts based on type
           let anglePromptsList: Array<{ angle: string; prompt: string; customLabel?: string }>;
           
-          if (uploadAngleType === 'custom') {
+          if (angleType === 'custom') {
             // Custom angles
             const validAngles = customAngles.filter(a => a.name.trim() && a.description.trim());
             if (validAngles.length === 0) {
@@ -304,8 +304,8 @@ export default function ConceptArchitect() {
         setIsUploading(false);
         setErrorMessage(error instanceof Error ? error.message : "Failed to process image. Please try again.");
       }
-    } else if (generationMode === 'single') {
-      // Single image generation (existing logic)
+    } else if (workflowMode === 'text' && !multiAngle) {
+      // Single image generation from text prompt
       try {
         const response = await fetch('/api/generate', {
           method: 'POST',
@@ -360,12 +360,12 @@ export default function ConceptArchitect() {
         setStatus('error');
         setErrorMessage("Failed to connect to the Architect Agent. Please try again.");
       }
-    } else {
-      // Multi-angle or Custom-angle generation
+    } else if (workflowMode === 'text' && multiAngle) {
+      // Multi-angle generation from text prompt
       try {
         let anglePromptsList: Array<{ angle: string; prompt: string; customLabel?: string }>;
         
-        if (generationMode === 'custom-angles') {
+        if (angleType === 'custom') {
           // Validate custom angles
           const validAngles = customAngles.filter(a => a.name.trim() && a.description.trim());
           if (validAngles.length === 0) {
@@ -377,7 +377,7 @@ export default function ConceptArchitect() {
           anglePromptsList = generateCustomAnglePrompts(prompt, validAngles);
           console.log("Generated custom angle prompts:", anglePromptsList);
         } else {
-          // Standard 4-angle mode
+          // Preset 4 angles
           const anglePrompts = generateAnglePrompts(prompt);
           anglePromptsList = ANGLE_TYPES.map(angle => ({
             angle,
@@ -881,12 +881,13 @@ export default function ConceptArchitect() {
         status: 'completed',
         metadata: {
           generation_time_ms: Date.now() - pollStartTimeRef.current,
-          mode: generationMode,
+          workflowMode,
+          multiAngle,
         },
       };
 
-      // Add source image URL for image-to-render mode
-      if (generationMode === 'image-to-render' && uploadedImageUrlRef.current) {
+      // Add source image URL for upload workflow mode
+      if (workflowMode === 'upload' && uploadedImageUrlRef.current) {
         body.source_image_url = uploadedImageUrlRef.current;
       }
 
@@ -919,7 +920,9 @@ export default function ConceptArchitect() {
         status: allCompleted ? 'completed' : anyCompleted ? 'partial' : 'failed',
         metadata: {
           generation_time_ms: Date.now() - pollStartTimeRef.current,
-          mode: generationMode, // Use actual mode (multi-angle or custom-angles)
+          workflowMode,
+          multiAngle,
+          angleType,
           angle_count: images.length,
         },
       };
@@ -929,7 +932,8 @@ export default function ConceptArchitect() {
         imageCount: images.length,
         completedCount: images.filter(i => i.status === 'completed').length,
         firstImageUrl: images[0]?.url?.substring(0, 50),
-        mode: generationMode,
+        workflowMode,
+        angleType,
       });
       
       const response = await fetch('/api/gallery', {
@@ -956,18 +960,18 @@ export default function ConceptArchitect() {
     setPrompt(concept.prompt);
     setErrorMessage(null);
     
-    // Check if this is a multi-angle or custom-angle concept
+    // Check if this is a multi-angle concept
     if (concept.images && concept.images.length > 0) {
-      // Detect mode from metadata (defaults to 'multi-angle' if not specified)
-      const mode = concept.metadata?.mode as typeof generationMode;
-      if (mode === 'custom-angles' || mode === 'multi-angle') {
-        setGenerationMode(mode);
-      } else {
-        setGenerationMode('multi-angle');
-      }
+      // Detect workflow mode and settings from metadata
+      const savedWorkflowMode = concept.metadata?.workflowMode as  'text' | 'upload' | undefined;
+      const savedAngleType = concept.metadata?.angleType as 'preset' | 'custom' | undefined;
+      
+      setWorkflowMode(savedWorkflowMode || 'text');
+      setMultiAngle(true);
+      setAngleType(savedAngleType || 'preset');
       
       console.log('Loading from history:', {
-        mode: mode || 'multi-angle',
+        workflowMode: savedWorkflowMode || 'text',
         imageCount: concept.images.length,
         hasUrls: concept.images.every(img => !!img.url),
         firstUrl: concept.images[0]?.url?.substring(0, 50),
@@ -978,7 +982,8 @@ export default function ConceptArchitect() {
       setStatus('complete');
     } else if (concept.image_url) {
       // Single image concept
-      setGenerationMode('single');
+      setWorkflowMode('text');
+      setMultiAngle(false);
       setImageUrl(concept.image_url);
       setAngleImages([]);
       setStatus('complete');
@@ -1026,52 +1031,49 @@ export default function ConceptArchitect() {
           </div>
 
         <div className="space-y-4">
-          {/* Mode Toggle */}
-          <div className="grid grid-cols-2 gap-2 p-1 bg-neutral-900/50 rounded-lg border border-neutral-700">
+          {/* Workflow Mode Tabs */}
+          <div className="flex gap-2 p-1 bg-neutral-900/50 rounded-lg border border-neutral-700">
             <button
-              onClick={() => setGenerationMode('single')}
-              className={`py-2 px-4 rounded-md transition-all text-sm font-medium ${
-                generationMode === 'single'
-                  ? 'bg-emerald-600 text-white'
-                  : 'text-neutral-400 hover:text-neutral-200'
+              onClick={() => {
+                setWorkflowMode('text');
+                setUploadedImage(null);
+                setUploadedImageUrl(null);
+              }}
+              className={`flex-1 py-3 px-6 rounded-md transition-all text-sm font-medium ${
+                workflowMode === 'text'
+                  ? 'bg-emerald-600 text-white shadow-lg'
+                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800'
               }`}
             >
-              Single Image
+              <div className="flex items-center justify-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Text to Image
+              </div>
             </button>
             <button
-              onClick={() => setGenerationMode('multi-angle')}
-              className={`py-2 px-4 rounded-md transition-all text-sm font-medium ${
-                generationMode === 'multi-angle'
-                  ? 'bg-emerald-600 text-white'
-                  : 'text-neutral-400 hover:text-neutral-200'
+              onClick={() => {
+                setWorkflowMode('upload');
+                setMultiAngle(false);
+              }}
+              className={`flex-1 py-3 px-6 rounded-md transition-all text-sm font-medium ${
+                workflowMode === 'upload'
+                  ? 'bg-emerald-600 text-white shadow-lg'
+                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800'
               }`}
             >
-              4-Angle View
-            </button>
-            <button
-              onClick={() => setGenerationMode('custom-angles')}
-              className={`py-2 px-4 rounded-md transition-all text-sm font-medium ${
-                generationMode === 'custom-angles'
-                  ? 'bg-emerald-600 text-white'
-                  : 'text-neutral-400 hover:text-neutral-200'
-              }`}
-            >
-              ✨ Custom Angles
-            </button>
-            <button
-              onClick={() => setGenerationMode('image-to-render')}
-              className={`py-2 px-4 rounded-md transition-all text-sm font-medium ${
-                generationMode === 'image-to-render'
-                  ? 'bg-emerald-600 text-white'
-                  : 'text-neutral-400 hover:text-neutral-200'
-              }`}
-            >
-              Image-to-Render
+              <div className="flex items-center justify-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Image to Render
+              </div>
             </button>
           </div>
 
-          {/* Image Upload (only for Image-to-Render mode) */}
-          {generationMode === 'image-to-render' && (
+          {/* Image Upload (only for Upload mode) */}
+          {workflowMode === 'upload' && (
             <div className="space-y-3">
               <label className="block text-sm font-medium text-neutral-300">
                 Upload Revit View (Hidden Line / Shaded)
@@ -1157,68 +1159,100 @@ export default function ConceptArchitect() {
                   <strong>AI-Enhanced Visualization:</strong> The AI may adjust perspective for visual appeal. For strict architectural accuracy, upload 3D perspective views rather than flat elevations.
                 </div>
               </div>
-              
-              {/* Multi-Angle Generation Option */}
-              {uploadedImageUrl && (
-                <div className="space-y-3 p-4 bg-emerald-900/10 border border-emerald-700/30 rounded-xl">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={uploadMultiAngle}
-                      onChange={(e) => setUploadMultiAngle(e.target.checked)}
-                      className="w-4 h-4 text-emerald-600 bg-neutral-800 border-neutral-600 rounded focus:ring-emerald-500"
-                    />
-                    <div>
-                      <div className="text-sm font-medium text-neutral-200">
-                        Generate Multiple Angles from Upload
-                      </div>
-                      <div className="text-xs text-neutral-400 mt-0.5">
-                        Create 4 coherent views (exterior, interior, aerial, detail) or define custom perspectives
-                      </div>
-                    </div>
-                  </label>
-                  
-                  {uploadMultiAngle && (
-                    <div className="mt-3 space-y-3">
-                      {/* Angle Type Selector */}
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setUploadAngleType('preset')}
-                          className={`flex-1 py-2 px-3 rounded-lg text-sm transition-all ${
-                            uploadAngleType === 'preset'
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                          }`}
-                        >
-                          Preset Angles (4)
-                        </button>
-                        <button
-                          onClick={() => setUploadAngleType('custom')}
-                          className={`flex-1 py-2 px-3 rounded-lg text-sm transition-all ${
-                            uploadAngleType === 'custom'
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                          }`}
-                        >
-                          Custom Angles
-                        </button>
-                      </div>
-                      
-                      {/* Show preset angles info */}
-                      {uploadAngleType === 'preset' && (
-                        <div className="text-xs text-neutral-400 p-2 bg-neutral-900/50 rounded">
-                          Will generate: <span className="text-emerald-400">Exterior</span>, <span className="text-emerald-400">Interior</span>, <span className="text-emerald-400">Aerial</span>, <span className="text-emerald-400">Detail</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
 
-          {/* Custom Angles Configuration (for text prompts OR upload multi-angle) */}
-          {((generationMode === 'custom-angles' && !uploadedImageUrl) || (uploadMultiAngle && uploadAngleType === 'custom' && uploadedImageUrl)) && (
+          {/* Prompt Field */}
+          <div className="relative">
+            <textarea
+              className="w-full bg-neutral-900/50 border border-neutral-700 rounded-xl p-4 text-neutral-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-none"
+              rows={4}
+              placeholder={
+                workflowMode === 'upload' && multiAngle
+                  ? "Optional: Describe rendering style (e.g., luxury materials, warm lighting, modern finishes...)"
+                  : workflowMode === 'upload'
+                  ? "e.g., Photorealistic render with luxury materials, warm natural lighting, high-end finishes..."
+                  : "e.g., A minimalist tropical resort with timber cladding and infinity pools..."
+              }
+              value={prompt}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value.length <= MAX_PROMPT_LENGTH) {
+                  setPrompt(value);
+                }
+              }}
+              disabled={status === 'generating' || isUploading}
+            />
+            <div className="absolute bottom-2 right-2 text-xs text-neutral-500">
+              {prompt.length}/{MAX_PROMPT_LENGTH}
+            </div>
+          </div>
+          
+          {/* Unified Multi-Angle Toggle (shows for both workflows) */}
+          <div className="space-y-3 p-4 bg-neutral-900/50 border border-neutral-700 rounded-xl">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={multiAngle}
+                onChange={(e) => setMultiAngle(e.target.checked)}
+                className="w-4 h-4 text-emerald-600 bg-neutral-800 border-neutral-600 rounded focus:ring-emerald-500"
+              />
+              <div>
+                <div className="text-sm font-medium text-neutral-200">
+                  Generate Multiple Angles
+                </div>
+                <div className="text-xs text-neutral-400 mt-0.5">
+                  {workflowMode === 'upload' 
+                    ? 'Create coherent views from your uploaded image (exterior, interior, aerial, detail) or define custom perspectives'
+                    : 'Generate 4 preset views or define custom camera angles for your architectural concept'}
+                </div>
+              </div>
+            </label>
+            
+            {multiAngle && (
+              <div className="mt-3 space-y-3">
+                {/* Angle Type Selector */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setAngleType('preset')}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm transition-all ${
+                      angleType === 'preset'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                    }`}
+                  >
+                    Preset (4 Views)
+                  </button>
+                  <button
+                    onClick={() => setAngleType('custom')}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm transition-all ${
+                      angleType === 'custom'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                    }`}
+                  >
+                    Custom Angles
+                  </button>
+                </div>
+                
+                {/* Show preset angles info */}
+                {angleType === 'preset' && (
+                  <div className="text-xs text-neutral-400 p-2 bg-neutral-900/50 rounded">
+                    Will generate: <span className="text-emerald-400">Exterior</span>, <span className="text-emerald-400">Interior</span>, <span className="text-emerald-400">Aerial</span>, <span className="text-emerald-400">Detail</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          {workflowMode === 'upload' && multiAngle && (
+            <p className="text-xs text-neutral-400 -mt-2">
+              💡 <strong>Tip:</strong> Prompt is optional when generating multiple angles from upload. Leave blank to use default photorealistic rendering.
+            </p>
+          )}
+
+          {/* Custom Angles Configuration (shows when custom angle type selected) */}
+          {multiAngle && angleType === 'custom' && (
             <div className="space-y-3 p-4 bg-neutral-900/50 border border-neutral-700 rounded-xl">
               <div className="flex justify-between items-center">
                 <label className="block text-sm font-medium text-neutral-300">
@@ -1284,9 +1318,9 @@ export default function ConceptArchitect() {
               className="w-full bg-neutral-900/50 border border-neutral-700 rounded-xl p-4 text-neutral-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-none"
               rows={4}
               placeholder={
-                generationMode === 'image-to-render' && uploadMultiAngle
+                workflowMode === 'upload' && multiAngle
                   ? "Optional: Describe rendering style (e.g., luxury materials, warm lighting, modern finishes...)"
-                  : generationMode === 'image-to-render'
+                  : workflowMode === 'upload'
                   ? "e.g., Photorealistic render with luxury materials, warm natural lighting, high-end finishes..."
                   : "e.g., A minimalist tropical resort with timber cladding and infinity pools..."
               }
@@ -1300,7 +1334,7 @@ export default function ConceptArchitect() {
             </div>
           </div>
           
-          {generationMode === 'image-to-render' && uploadMultiAngle && (
+          {workflowMode === 'upload' && multiAngle && (
             <p className="text-xs text-neutral-400 -mt-2">
               💡 <strong>Tip:</strong> Prompt is optional when generating multiple angles from upload. Leave blank to use default photorealistic rendering.
             </p>
@@ -1311,10 +1345,10 @@ export default function ConceptArchitect() {
             disabled={
               status === 'generating' || 
               isUploading ||
-              // Prompt required unless it's multi-angle upload (where it's optional)
-              (!(generationMode === 'image-to-render' && uploadedImage && uploadMultiAngle) && 
+              // Prompt required unless it's upload mode with multi-angle (where it's optional)
+              (!(workflowMode === 'upload' && uploadedImage && multiAngle) && 
                 (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH)) ||
-              (generationMode === 'image-to-render' && !uploadedImage)
+              (workflowMode === 'upload' && !uploadedImage)
             }
             className="w-full py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
             title="Ctrl/Cmd + Enter"
@@ -1343,7 +1377,7 @@ export default function ConceptArchitect() {
         )}
 
         {/* Single Image Display */}
-        {(generationMode === 'single' || (generationMode === 'image-to-render' && !uploadMultiAngle)) && imageUrl && status === 'complete' && (
+        {!multiAngle && imageUrl && status === 'complete' && (
           <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
             <div className="relative aspect-video w-full rounded-xl overflow-hidden border border-neutral-700 shadow-2xl">
               <img 
@@ -1369,7 +1403,7 @@ export default function ConceptArchitect() {
                   setStatus('idle'); 
                   setImageUrl(null); 
                   setPrompt(''); 
-                  setUploadMultiAngle(false);
+                  setMultiAngle(false);
                   setUploadedImage(null);
                   setUploadedImageUrl(null);
                   uploadedImageUrlRef.current = null;
@@ -1382,8 +1416,8 @@ export default function ConceptArchitect() {
           </div>
         )}
 
-        {/* Multi-Angle or Custom-Angle Grid Display */}
-        {(generationMode === 'multi-angle' || generationMode === 'custom-angles' || (generationMode === 'image-to-render' && uploadMultiAngle)) && angleImages.length > 0 && status === 'complete' && (
+        {/* Multi-Angle Grid Display */}
+        {multiAngle && angleImages.length > 0 && status === 'complete' && (
           <div className="mt-8 animate-in fade-in-slide-in-from-bottom-4 duration-700 ease-out">
             <div className={`grid gap-4 ${angleImages.length <= 2 ? 'grid-cols-1 md:grid-cols-2' : angleImages.length === 3 ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-2'}`}>
               {angleImages.map((angleData) => {
@@ -1640,7 +1674,7 @@ export default function ConceptArchitect() {
                     setStatus('idle'); 
                     setAngleImages([]); 
                     setPrompt('');
-                    setUploadMultiAngle(false);
+                    setMultiAngle(false);
                     setUploadedImage(null);
                     setUploadedImageUrl(null);
                     uploadedImageUrlRef.current = null;
