@@ -135,3 +135,28 @@ export function getAngleLoadingMessage(angle: AngleType): string {
   };
   return messages[angle];
 }
+
+/**
+ * Generates prompts for custom angles
+ */
+export function generateCustomAnglePrompts(
+  userPrompt: string, 
+  customAngles: Array<{ name: string; description: string }>
+): Array<{ angle: string; prompt: string; customLabel: string }> {
+  const dna = extractArchitecturalDNA(userPrompt);
+  
+  return customAngles.map((angleConfig, index) => {
+    const isFirst = index === 0;
+    
+    // First angle establishes the design, others reference it
+    const promptText = isFirst
+      ? (dna ? `${angleConfig.description}, ${userPrompt}, ${dna}` : `${angleConfig.description}, ${userPrompt}`)
+      : (dna ? `${angleConfig.description}, same building: ${userPrompt}, ${dna}` : `${angleConfig.description}, same building: ${userPrompt}`);
+    
+    return {
+      angle: angleConfig.name.toLowerCase().replace(/\s+/g, '-'), // "street level" → "street-level"
+      prompt: promptText,
+      customLabel: angleConfig.name, // Display name: "Street Level"
+    };
+  });
+}

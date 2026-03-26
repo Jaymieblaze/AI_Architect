@@ -2,13 +2,14 @@
  * Database types for Supabase
  */
 
-export type AngleType = 'exterior' | 'interior' | 'aerial' | 'detail';
+export type AngleType = 'exterior' | 'interior' | 'aerial' | 'detail' | string; // Allow custom angles
 
 export interface AngleImage {
   angle: AngleType;
   url: string;
   job_id: string;
   status: 'pending' | 'generating' | 'completed' | 'failed';
+  customLabel?: string; // Display name for custom angles
 }
 
 export interface Concept {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { GenerateResponse, PollResponse } from '@/types/api';
 import type { Concept, AngleImage, AngleType } from '@/types/database';
-import { generateAnglePrompts, getAngleLoadingMessage, getAngleDisplayName, ANGLE_TYPES } from '@/types/angleGeneration';
+import { generateAnglePrompts, generateCustomAnglePrompts, getAngleLoadingMessage, getAngleDisplayName, ANGLE_TYPES } from '@/types/angleGeneration';
 import { uploadImage } from '@/lib/uploadImage';
 
 const LOADING_PHRASES = [
@@ -23,7 +23,12 @@ const MAX_PROMPT_LENGTH = 500;
 export default function ConceptArchitect() {
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState<'idle' | 'generating' | 'complete' | 'error'>('idle');
-  const [generationMode, setGenerationMode] = useState<'single' | 'multi-angle' | 'image-to-render'>('single');
+  const [generationMode, setGenerationMode] = useState<'single' | 'multi-angle' | 'custom-angles' | 'image-to-render'>('single');
+  const [customAngles, setCustomAngles] = useState<Array<{ name: string; description: string }>>([
+    { name: 'Street Level', description: 'street level view' },
+    { name: 'Entrance Closeup', description: 'entrance closeup architectural detail' },
+    { name: 'Balcony View', description: 'from the balcony perspective' },
+  ]);
   
   // Image-to-render state
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
@@ -36,6 +41,12 @@ export default function ConceptArchitect() {
   
   // Multi-angle state
   const [angleImages, setAngleImages] = useState<AngleImage[]>([]);
+  
+  // Animation state
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [currentAnimationIndex, setCurrentAnimationIndex] = useState(0);
+  const [animationSpeed, setAnimationSpeed] = useState(3); // seconds per slide
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   const [loadingText, setLoadingText] = useState(LOADING_PHRASES[0]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -61,6 +72,17 @@ export default function ConceptArchitect() {
     }, 2500);
     return () => clearInterval(interval);
   }, [status]);
+
+  // Animation cycling effect
+  useEffect(() => {
+    if (!isAnimating || angleImages.length === 0) return;
+    
+    const interval = setInterval(() => {
+      setCurrentAnimationIndex((prev) => (prev + 1) % angleImages.length);
+    }, animationSpeed * 1000);
+    
+    return () => clearInterval(interval);
+  }, [isAnimating, angleImages.length, animationSpeed]);
 
   const generateConcept = async () => {
     if (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH) {
@@ -204,93 +226,109 @@ export default function ConceptArchitect() {
         setErrorMessage("Failed to connect to the Architect Agent. Please try again.");
       }
     } else {
-      // Multi-angle generation
+      // Multi-angle or Custom-angle generation
       try {
-        const anglePrompts = generateAnglePrompts(prompt);
-        console.log("Generated angle prompts:", anglePrompts);
+        let anglePromptsList: Array<{ angle: string; prompt: string; customLabel?: string }>;
+        
+        if (generationMode === 'custom-angles') {
+          // Validate custom angles
+          const validAngles = customAngles.filter(a => a.name.trim() && a.description.trim());
+          if (validAngles.length === 0) {
+            setErrorMessage('Please add at least one custom angle with both name and description.');
+            setStatus('idle');
+            return;
+          }
+          
+          anglePromptsList = generateCustomAnglePrompts(prompt, validAngles);
+          console.log("Generated custom angle prompts:", anglePromptsList);
+        } else {
+          // Standard 4-angle mode
+          const anglePrompts = generateAnglePrompts(prompt);
+          anglePromptsList = ANGLE_TYPES.map(angle => ({
+            angle,
+            prompt: anglePrompts[angle] || '',
+          }));
+          console.log("Generated angle prompts:", anglePrompts);
+        }
         
         // Generate a random seed for consistency across all angles
         const generationSeed = Math.floor(Math.random() * 4294967295);
         console.log("Using seed for coherence:", generationSeed);
         
         // Initialize angle images array
-        const initialAngles: AngleImage[] = ANGLE_TYPES.map(angle => ({
+        const initialAngles: AngleImage[] = anglePromptsList.map(({ angle, customLabel }) => ({
           angle,
           url: '',
           job_id: '',
           status: 'pending' as const,
+          customLabel,
         }));
         setAngleImages(initialAngles);
         
         // SEQUENTIAL GENERATION WITH IMAGE-TO-IMAGE:
-        // 1. Generate EXTERIOR first (establishes the building design)
-        // 2. Wait for exterior to complete
-        // 3. Use exterior image as reference for the other 3 angles
+        // 1. Generate FIRST angle (establishes the building design)
+        // 2. Wait for first angle to complete
+        // 3. Use first angle image as reference for the other angles
         
-        console.log('Generating exterior view first...');
+        if (anglePromptsList.length === 0) {
+          throw new Error('No angle prompts generated');
+        }
         
-        // TEMPORARY: Only send user_prompt until n8n workflow is updated
-        // TODO: Remove this flag after updating n8n workflow (see N8N_WORKFLOW_UPDATE.md)
-        const useAdvancedFeatures = true; // Set to true after updating n8n
+        const [firstAngle, ...otherAnglesList] = anglePromptsList;
+        console.log(`Generating ${firstAngle!.customLabel || firstAngle!.angle} view first...`);
         
-        const exteriorRequestBody: any = { 
-          user_prompt: anglePrompts['exterior']
+        const useAdvancedFeatures = true;
+        
+        const firstRequestBody: any = { 
+          user_prompt: firstAngle!.prompt
         };
         
         if (useAdvancedFeatures) {
-          exteriorRequestBody.seed = generationSeed;
+          firstRequestBody.seed = generationSeed;
         }
         
-        const exteriorResponse = await fetch('/api/generate', {
+        const firstResponse = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(exteriorRequestBody),
+          body: JSON.stringify(firstRequestBody),
         });
         
-        if (!exteriorResponse.ok) {
-          const errorText = await exteriorResponse.text();
-          console.error('Exterior generation failed:', errorText);
-          throw new Error('Failed to generate exterior view');
+        if (!firstResponse.ok) {
+          const errorText = await firstResponse.text();
+          console.error('First angle generation failed:', errorText);
+          throw new Error('Failed to generate first view');
         }
         
-        const rawData = await exteriorResponse.json();
-        const exteriorJobId = extractJobId(rawData);
+        const rawData = await firstResponse.json();
+        const firstJobId = extractJobId(rawData);
         
-        if (!exteriorJobId) {
-          throw new Error('No job ID for exterior view');
+        if (!firstJobId) {
+          throw new Error('No job ID for first view');
         }
         
-        angleJobIdsRef.current.set('exterior', exteriorJobId);
+        angleJobIdsRef.current.set(firstAngle!.angle as any, firstJobId);
         
-        // Start polling exterior (but don't call pollAngleStatus yet - we need to wait)
-        // Instead, wait for exterior to complete first
-        console.log('Waiting for exterior to complete before generating other angles...');
-        const exteriorUrl = await waitForAngleCompletion('exterior', exteriorJobId);
+        console.log('Waiting for first angle to complete before generating other angles...');
+        const firstAngleUrl = await waitForAngleCompletion(firstAngle!.angle as any, firstJobId);
         
-        if (!exteriorUrl) {
-          // Exterior failed - still try other angles without reference
-          console.warn('Exterior failed, generating other angles without reference');
+        if (!firstAngleUrl) {
+          console.warn('First angle failed, generating other angles without reference');
         }
         
-        // Step 2: Generate other angles with exterior as reference
-        const otherAngles: AngleType[] = ['interior', 'aerial', 'detail'];
-        const otherPromises = otherAngles.map(async (angle) => {
+        // Step 2: Generate other angles with first angle as reference
+        const otherPromises = otherAnglesList.map(async ({ angle, prompt, customLabel }) => {
           try {
             const requestBody: any = {
-              user_prompt: anglePrompts[angle],
+              user_prompt: prompt,
             };
             
-            // Only add advanced features if n8n workflow supports them
             if (useAdvancedFeatures) {
               requestBody.seed = generationSeed;
               
-              // If we have exterior URL, use it as reference for img2img
-              if (exteriorUrl) {
-                requestBody.imageUrls = [exteriorUrl];
-                // CRITICAL: imagePromptStrengths controls reference adherence (0-100 scale)
-                // 80 = strong adherence (Krea's tested value - requires nano-banana model!)
+              if (firstAngleUrl) {
+                requestBody.imageUrls = [firstAngleUrl];
                 requestBody.imagePromptStrengths = [80];
-                console.log(`Generating ${angle} with seed + exterior reference (strength: 80)`);
+                console.log(`Generating ${customLabel || angle} with seed + first angle reference (strength: 80)`);
               }
             }
             
@@ -313,14 +351,14 @@ export default function ConceptArchitect() {
               throw new Error(`No job ID for ${angle} view`);
             }
             
-            angleJobIdsRef.current.set(angle, job_id);
-            pollAngleStatus(angle, job_id);
+            angleJobIdsRef.current.set(angle as any, job_id);
+            pollAngleStatus(angle as any, job_id);
             
             return { angle, job_id };
           } catch (error) {
             console.error(`Failed to start ${angle} generation:`, error);
             setAngleImages(prev => prev.map(img => 
-              img.angle ===angle ? { ...img, status: 'failed' as const } : img
+              img.angle === angle ? { ...img, status: 'failed' as const } : img
             ));
             return { angle, job_id: null };
           }
@@ -809,10 +847,10 @@ export default function ConceptArchitect() {
 
         <div className="space-y-4">
           {/* Mode Toggle */}
-          <div className="flex gap-2 p-1 bg-neutral-900/50 rounded-lg border border-neutral-700">
+          <div className="grid grid-cols-2 gap-2 p-1 bg-neutral-900/50 rounded-lg border border-neutral-700">
             <button
               onClick={() => setGenerationMode('single')}
-              className={`flex-1 py-2 px-4 rounded-md transition-all text-sm font-medium ${
+              className={`py-2 px-4 rounded-md transition-all text-sm font-medium ${
                 generationMode === 'single'
                   ? 'bg-emerald-600 text-white'
                   : 'text-neutral-400 hover:text-neutral-200'
@@ -822,7 +860,7 @@ export default function ConceptArchitect() {
             </button>
             <button
               onClick={() => setGenerationMode('multi-angle')}
-              className={`flex-1 py-2 px-4 rounded-md transition-all text-sm font-medium ${
+              className={`py-2 px-4 rounded-md transition-all text-sm font-medium ${
                 generationMode === 'multi-angle'
                   ? 'bg-emerald-600 text-white'
                   : 'text-neutral-400 hover:text-neutral-200'
@@ -831,8 +869,18 @@ export default function ConceptArchitect() {
               4-Angle View
             </button>
             <button
+              onClick={() => setGenerationMode('custom-angles')}
+              className={`py-2 px-4 rounded-md transition-all text-sm font-medium ${
+                generationMode === 'custom-angles'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              ✨ Custom Angles
+            </button>
+            <button
               onClick={() => setGenerationMode('image-to-render')}
-              className={`flex-1 py-2 px-4 rounded-md transition-all text-sm font-medium ${
+              className={`py-2 px-4 rounded-md transition-all text-sm font-medium ${
                 generationMode === 'image-to-render'
                   ? 'bg-emerald-600 text-white'
                   : 'text-neutral-400 hover:text-neutral-200'
@@ -922,13 +970,75 @@ export default function ConceptArchitect() {
               
               {/* Disclaimer */}
               <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                <svg className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <div className="text-xs text-amber-200">
                   <strong>AI-Enhanced Visualization:</strong> The AI may adjust perspective for visual appeal. For strict architectural accuracy, upload 3D perspective views rather than flat elevations.
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Custom Angles Configuration */}
+          {generationMode === 'custom-angles' && (
+            <div className="space-y-3 p-4 bg-neutral-900/50 border border-neutral-700 rounded-xl">
+              <div className="flex justify-between items-center">
+                <label className="block text-sm font-medium text-neutral-300">
+                  Configure Custom Angles ({customAngles.length})
+                </label>
+                <button
+                  onClick={() => setCustomAngles([...customAngles, { name: '', description: '' }])}
+                  className="px-3 py-1 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-all"
+                >
+                  + Add Angle
+                </button>
+              </div>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {customAngles.map((angle, index) => (
+                  <div key={index} className="flex gap-2 items-start p-2 bg-neutral-800/50 rounded-lg">
+                    <div className="flex-1 space-y-1">
+                      <input
+                        type="text"
+                        placeholder="Name (e.g., Street Level)"
+                        value={angle.name}
+                        onChange={(e) => {
+                          const updated = [...customAngles];
+                          if (updated[index]) {
+                            updated[index].name = e.target.value;
+                            setCustomAngles(updated);
+                          }
+                        }}
+                        className="w-full px-2 py-1 text-sm bg-neutral-900 border border-neutral-700 rounded text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Description (e.g., street level view)"
+                        value={angle.description}
+                        onChange={(e) => {
+                          const updated = [...customAngles];
+                          if (updated[index]) {
+                            updated[index].description = e.target.value;
+                            setCustomAngles(updated);
+                          }
+                        }}
+                        className="w-full px-2 py-1 text-sm bg-neutral-900 border border-neutral-700 rounded text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    {customAngles.length > 1 && (
+                      <button
+                        onClick={() => setCustomAngles(customAngles.filter((_, i) => i !== index))}
+                        className="mt-1 text-red-400 hover:text-red-300 text-sm"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-neutral-500">
+                First angle establishes the design. Others will reference it for coherence.
+              </p>
             </div>
           )}
 
@@ -1023,12 +1133,12 @@ export default function ConceptArchitect() {
           </div>
         )}
 
-        {/* Multi-Angle 4-Grid Display */}
-        {generationMode === 'multi-angle' && angleImages.length > 0 && (
+        {/* Multi-Angle or Custom-Angle Grid Display */}
+        {(generationMode === 'multi-angle' || generationMode === 'custom-angles') && angleImages.length > 0 && (
           <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
-            <div className="grid grid-cols-2 gap-4">
-              {ANGLE_TYPES.map((angle) => {
-                const angleData = angleImages.find(img => img.angle === angle);
+            <div className={`grid gap-4 ${angleImages.length <= 2 ? 'grid-cols-1 md:grid-cols-2' : angleImages.length === 3 ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-2'}`}>
+              {angleImages.map((angleData) => {
+                const angle = angleData.angle;
                 const isCompleted = angleData?.status === 'completed';
                 const isFailed = angleData?.status === 'failed';
                 
@@ -1040,7 +1150,7 @@ export default function ConceptArchitect() {
                     {isCompleted && angleData?.url ? (
                       <img 
                         src={angleData.url} 
-                        alt={`${getAngleDisplayName(angle)} View`} 
+                        alt={`${angleData.customLabel || getAngleDisplayName(angle)} View`} 
                         className="object-cover w-full h-full"
                       />
                     ) : isFailed ? (
@@ -1054,7 +1164,7 @@ export default function ConceptArchitect() {
                       <div className="flex flex-col items-center justify-center h-full">
                         <div className="animate-spin mb-2 w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full" />
                         <p className="text-neutral-400 text-sm animate-pulse">
-                          {getAngleLoadingMessage(angle)}
+                          {angleData?.customLabel ? `Generating ${angleData.customLabel}...` : getAngleLoadingMessage(angle)}
                         </p>
                       </div>
                     )}
@@ -1062,7 +1172,7 @@ export default function ConceptArchitect() {
                     {/* Angle Label */}
                     <div className="absolute top-2 left-2 px-3 py-1 bg-neutral-900/80 backdrop-blur-sm rounded-full border border-neutral-700">
                       <span className="text-xs font-medium text-neutral-200">
-                        {getAngleDisplayName(angle)}
+                        {angleData?.customLabel || getAngleDisplayName(angle)}
                       </span>
                     </div>
                   </div>
@@ -1070,23 +1180,204 @@ export default function ConceptArchitect() {
               })}
             </div>
             
+            {/* Animation Controls */}
+            {status === 'complete' && angleImages.length > 1 && (
+              <div className="mt-6 p-4 bg-neutral-800/50 rounded-xl border border-neutral-700">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        setIsAnimating(!isAnimating);
+                        if (!isAnimating) {
+                          setCurrentAnimationIndex(0);
+                        }
+                      }}
+                      className={`p-3 rounded-lg transition-all ${isAnimating ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'} text-white`}
+                      title={isAnimating ? 'Pause Animation' : 'Play Animation'}
+                    >
+                      {isAnimating ? (
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      )}
+                    </button>
+                    
+                    <div className="flex flex-col">
+                      <span className="text-xs text-neutral-400 mb-1">Speed</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setAnimationSpeed(Math.max(1, animationSpeed - 0.5))}
+                          className="px-2 py-1 bg-neutral-700 hover:bg-neutral-600 text-neutral-200 rounded text-xs transition-all"
+                        >
+                          −
+                        </button>
+                        <span className="text-sm text-neutral-200 w-12 text-center">{animationSpeed}s</span>
+                        <button
+                          onClick={() => setAnimationSpeed(Math.min(10, animationSpeed + 0.5))}
+                          className="px-2 py-1 bg-neutral-700 hover:bg-neutral-600 text-neutral-200 rounded text-xs transition-all"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                    className="p-3 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition-all"
+                    title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen Presentation'}
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      {isFullscreen ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                      )}
+                    </svg>
+                  </button>
+                </div>
+                
+                {isAnimating && (
+                  <div className="mt-3 text-center">
+                    <p className="text-xs text-emerald-400">
+                      🎬 Playing: {angleImages[currentAnimationIndex]?.customLabel || getAngleDisplayName(angleImages[currentAnimationIndex]?.angle as any)} ({currentAnimationIndex + 1}/{angleImages.length})
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Fullscreen Animation View */}
+            {isFullscreen && (
+              <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center">
+                {/* Close Button */}
+                <button
+                  onClick={() => {
+                    setIsFullscreen(false);
+                    setIsAnimating(false);
+                  }}
+                  className="absolute top-4 right-4 p-3 bg-neutral-800/80 hover:bg-neutral-700 rounded-lg text-white transition-all z-10"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                
+                {/* Navigation Controls */}
+                <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex items-center gap-4 bg-neutral-900/90 backdrop-blur-md px-6 py-4 rounded-xl z-10">
+                  <button
+                    onClick={() => setCurrentAnimationIndex((prev) => (prev - 1 + angleImages.length) % angleImages.length)}
+                    className="p-2 hover:bg-neutral-700 rounded-lg text-white transition-all"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  
+                  <button
+                    onClick={() => setIsAnimating(!isAnimating)}
+                    className={`p-3 rounded-lg transition-all ${isAnimating ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'} text-white`}
+                  >
+                    {isAnimating ? (
+                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    )}
+                  </button>
+                  
+                  <button
+                    onClick={() => setCurrentAnimationIndex((prev) => (prev + 1) % angleImages.length)}
+                    className="p-2 hover:bg-neutral-700 rounded-lg text-white transition-all"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                  
+                  <div className="ml-4 text-sm text-white">
+                    {currentAnimationIndex + 1} / {angleImages.length}
+                  </div>
+                </div>
+                
+                {/* Current Image */}
+                <div className="relative w-full h-full flex items-center justify-center p-8">
+                  {angleImages[currentAnimationIndex] && (
+                    <div className="relative max-w-7xl max-h-full">
+                      <img
+                        src={angleImages[currentAnimationIndex].url || ''}
+                        alt={angleImages[currentAnimationIndex].customLabel || getAngleDisplayName(angleImages[currentAnimationIndex].angle as any)}
+                        className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl transition-opacity duration-500"
+                        style={{ opacity: isAnimating ? 1 : 0.95 }}
+                      />
+                      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 px-6 py-3 bg-black/70 backdrop-blur-sm rounded-full">
+                        <span className="text-white font-medium text-lg">
+                          {angleImages[currentAnimationIndex].customLabel || getAngleDisplayName(angleImages[currentAnimationIndex].angle as any)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
             {/* Action Buttons Below Grid */}
             {status === 'complete' && (
               <div className="mt-4 flex gap-3">
+                {angleImages.length > 1 && (
+                  <button
+                    onClick={() => {
+                      setIsFullscreen(true);
+                      setIsAnimating(true);
+                      setCurrentAnimationIndex(0);
+                    }}
+                    className="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium transition-all flex justify-center items-center gap-2"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Present
+                  </button>
+                )}
                 <button
-                  onClick={() => {
-                    // Download all completed images with delay to avoid browser blocking
+                  onClick={async () => {
+                    // Download all completed images sequentially
                     const completedImages = angleImages.filter(img => img.status === 'completed' && img.url);
-                    completedImages.forEach((img, index) => {
-                      setTimeout(() => {
+                    
+                    // Use a simple sequential approach with direct links
+                    for (let i = 0; i < completedImages.length; i++) {
+                      const img = completedImages[i];
+                      if (!img || !img.url) continue;
+                      
+                      try {
+                        // Create download link (direct URL - no CORS issues)
                         const link = document.createElement('a');
-                        link.href = img.url!;
-                        link.download = `architectural-concept-${img.angle}-${Date.now()}.jpg`;
+                        link.href = img.url;
+                        link.download = `architectural-concept-${img.customLabel || img.angle}.jpg`;
+                        link.target = '_blank'; // Open in new tab as fallback
+                        link.rel = 'noopener noreferrer';
+                        
+                        // Trigger download
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
-                      }, index * 500); // 500ms delay between each download
-                    });
+                        
+                        // Wait before next download to avoid browser blocking
+                        if (i < completedImages.length - 1) {
+                          await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+                      } catch (error) {
+                        console.error('Failed to download image:', error);
+                      }
+                    }
                   }}
                   className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-all flex justify-center items-center gap-2"
                 >
