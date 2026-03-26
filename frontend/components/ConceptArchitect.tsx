@@ -1076,7 +1076,7 @@ export default function ConceptArchitect() {
           {workflowMode === 'upload' && (
             <div className="space-y-3">
               <label className="block text-sm font-medium text-neutral-300">
-                Upload Revit View (Hidden Line / Shaded)
+                Upload Image
               </label>
               <div className="relative">
                 <input
@@ -1663,11 +1663,14 @@ export default function ConceptArchitect() {
         </div>
 
         {/* History Sidebar */}
-        <div className={`${showHistory ? 'w-full lg:w-80' : 'w-12'} ${showHistory ? 'block' : 'hidden lg:flex'} transition-all duration-300 bg-neutral-800/50 backdrop-blur-xl border border-neutral-700 rounded-xl md:rounded-2xl shadow-2xl flex-col overflow-hidden`}>
+        <div className={`${showHistory ? 'w-full lg:w-80' : 'w-full lg:w-12'} transition-all duration-300 bg-neutral-800/50 backdrop-blur-xl border border-neutral-700 rounded-xl md:rounded-2xl shadow-2xl flex flex-col overflow-hidden`}>
           {/* History Header */}
-          <div className={`${showHistory ? 'p-4' : 'p-2'} border-b border-neutral-700 flex ${showHistory ? 'justify-between' : 'justify-center'} items-center`}>
+          <div className={`${showHistory ? 'p-4' : 'p-4 lg:p-2'} border-b border-neutral-700 flex ${showHistory ? 'justify-between' : 'justify-between lg:justify-center'} items-center`}>
             {showHistory && (
               <h2 className="text-lg text-neutral-100 font-medium">Recent</h2>
+            )}
+            {!showHistory && (
+              <h2 className="text-lg text-neutral-100 font-medium lg:hidden">Recent</h2>
             )}
             <button
               onClick={() => setShowHistory(!showHistory)}
@@ -1676,9 +1679,17 @@ export default function ConceptArchitect() {
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 {showHistory ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                  // Expanded: chevron-up on mobile, chevron-left on desktop
+                  <>
+                    <path className="lg:hidden" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    <path className="hidden lg:block" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                  </>
                 ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                  // Collapsed: chevron-down on mobile, chevron-right on desktop
+                  <>
+                    <path className="lg:hidden" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    <path className="hidden lg:block" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                  </>
                 )}
               </svg>
             </button>
