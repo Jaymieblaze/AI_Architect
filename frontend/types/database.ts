@@ -39,6 +39,8 @@ export interface ConceptInsert {
   job_id?: string;
   // New multi-angle (optional)
   images?: AngleImage[];
+  // Source image for img2img transformations
+  source_image_url?: string;
   status?: 'completed' | 'failed' | 'partial';
   metadata?: Concept['metadata'];
 }
