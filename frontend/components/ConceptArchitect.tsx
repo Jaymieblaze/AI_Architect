@@ -106,11 +106,11 @@ export default function ConceptArchitect() {
       return;
     }
     
-    // Use default prompt for multi-angle upload if none provided
+    // Use default prompt for upload mode if none provided
     let effectivePrompt = prompt;
-    if (isMultiAngleUpload && (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH)) {
+    if (workflowMode === 'upload' && (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH)) {
       effectivePrompt = 'photorealistic architectural rendering with professional lighting and materials';
-      console.log('Using default prompt for multi-angle upload:', effectivePrompt);
+      console.log('Using default prompt for upload mode:', effectivePrompt);
     }
 
     setStatus('generating');
