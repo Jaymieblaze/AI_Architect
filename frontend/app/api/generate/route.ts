@@ -87,10 +87,9 @@ async function generateSingleImage(
 ): Promise<string> {
   const payload: any = {
     prompt,
-    model: 'krea-ai',
+    negative_prompt: '',
     width: 1024,
     height: 1024,
-    num_outputs: 1,
   };
 
   // Add seed if provided
@@ -100,11 +99,11 @@ async function generateSingleImage(
 
   // Add image URLs for img2img workflow
   if (imageUrls && imageUrls.length > 0) {
-    payload.image = imageUrls[0]; // KREA uses first image as base
+    payload.image_url = imageUrls[0]; // KREA uses image_url for img2img
     payload.strength = 0.7; // Transformation strength
   }
 
-  const response = await fetch('https://api.krea.ai/jobs', {
+  const response = await fetch('https://api.krea.ai/v1/images/generate', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
