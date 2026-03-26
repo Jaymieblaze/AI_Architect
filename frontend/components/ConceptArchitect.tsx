@@ -87,10 +87,10 @@ export default function ConceptArchitect() {
   }, [isAnimating, angleImages.length, animationSpeed]);
 
   const generateConcept = async () => {
-    // For multi-angle from upload, prompt is optional (but helpful for style guidance)
-    const isMultiAngleUpload = workflowMode === 'upload' && uploadedImage && multiAngle;
+    // For upload mode, prompt is optional - the image is the prompt
+    const isUploadMode = workflowMode === 'upload' && uploadedImage;
     
-    if (!isMultiAngleUpload && (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH)) {
+    if (!isUploadMode && (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH)) {
       setErrorMessage(`Please enter at least ${MIN_PROMPT_LENGTH} characters to describe your concept.`);
       return;
     }
@@ -1168,10 +1168,8 @@ export default function ConceptArchitect() {
               className="w-full bg-neutral-900/50 border border-neutral-700 rounded-xl p-3 sm:p-4 text-sm sm:text-base text-neutral-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-none"
               rows={3}
               placeholder={
-                workflowMode === 'upload' && multiAngle
+                workflowMode === 'upload'
                   ? "Optional: Describe rendering style (e.g., luxury materials, warm lighting, modern finishes...)"
-                  : workflowMode === 'upload'
-                  ? "e.g., Photorealistic render with luxury materials, warm natural lighting, high-end finishes..."
                   : "e.g., A minimalist tropical resort with timber cladding and infinity pools..."
               }
               value={prompt}
@@ -1188,9 +1186,9 @@ export default function ConceptArchitect() {
             </div>
           </div>
           
-          {workflowMode === 'upload' && multiAngle && (
+          {workflowMode === 'upload' && (
             <p className="text-xs text-neutral-400 -mt-2">
-              💡 <strong>Tip:</strong> Prompt is optional when generating multiple angles from upload. Leave blank to use default photorealistic rendering.
+              💡 <strong>Tip:</strong> Prompt is optional for Image to Render. The AI will transform your uploaded image. Add style guidance if desired.
             </p>
           )}
           
@@ -1318,9 +1316,8 @@ export default function ConceptArchitect() {
             disabled={
               status === 'generating' || 
               isUploading ||
-              // Prompt required unless it's upload mode with multi-angle (where it's optional)
-              (!(workflowMode === 'upload' && uploadedImage && multiAngle) && 
-                (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH)) ||
+              // Prompt required for text mode, optional for upload mode
+              (workflowMode === 'text' && (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH)) ||
               (workflowMode === 'upload' && !uploadedImage)
             }
             className="w-full py-3.5 sm:py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm sm:text-base font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 touch-manipulation"
