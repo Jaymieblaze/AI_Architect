@@ -27,7 +27,7 @@ export default function ConceptArchitect() {
   const [customAngles, setCustomAngles] = useState<Array<{ name: string; description: string }>>([
     { name: 'Street Level', description: 'street level view' },
     { name: 'Entrance Closeup', description: 'entrance closeup architectural detail' },
-    { name: 'Balcony View', description: 'from the balcony perspective' },
+    { name: 'Aerial View', description: 'bird\'s eye view from above' },
   ]);
   
   // Image-to-render state
