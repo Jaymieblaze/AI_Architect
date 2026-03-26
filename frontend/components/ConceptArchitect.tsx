@@ -1188,6 +1188,12 @@ export default function ConceptArchitect() {
             </div>
           </div>
           
+          {workflowMode === 'upload' && multiAngle && (
+            <p className="text-xs text-neutral-400 -mt-2">
+              💡 <strong>Tip:</strong> Prompt is optional when generating multiple angles from upload. Leave blank to use default photorealistic rendering.
+            </p>
+          )}
+          
           {/* Unified Multi-Angle Toggle (shows for both workflows) */}
           <div className="space-y-3 p-4 bg-neutral-900/50 border border-neutral-700 rounded-xl">
             <label className="flex items-center gap-3 cursor-pointer">
@@ -1244,12 +1250,6 @@ export default function ConceptArchitect() {
               </div>
             )}
           </div>
-          
-          {workflowMode === 'upload' && multiAngle && (
-            <p className="text-xs text-neutral-400 -mt-2">
-              💡 <strong>Tip:</strong> Prompt is optional when generating multiple angles from upload. Leave blank to use default photorealistic rendering.
-            </p>
-          )}
 
           {/* Custom Angles Configuration (shows when custom angle type selected) */}
           {multiAngle && angleType === 'custom' && (
@@ -1311,33 +1311,6 @@ export default function ConceptArchitect() {
                 First angle establishes the design. Others will reference it for coherence.
               </p>
             </div>
-          )}
-
-          <div className="relative">
-            <textarea
-              className="w-full bg-neutral-900/50 border border-neutral-700 rounded-xl p-4 text-neutral-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-none"
-              rows={4}
-              placeholder={
-                workflowMode === 'upload' && multiAngle
-                  ? "Optional: Describe rendering style (e.g., luxury materials, warm lighting, modern finishes...)"
-                  : workflowMode === 'upload'
-                  ? "e.g., Photorealistic render with luxury materials, warm natural lighting, high-end finishes..."
-                  : "e.g., A minimalist tropical resort with timber cladding and infinity pools..."
-              }
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              disabled={status === 'generating'}
-              maxLength={MAX_PROMPT_LENGTH}
-            />
-            <div className="absolute bottom-2 right-2 text-xs text-neutral-500">
-              {prompt.length}/{MAX_PROMPT_LENGTH}
-            </div>
-          </div>
-          
-          {workflowMode === 'upload' && multiAngle && (
-            <p className="text-xs text-neutral-400 -mt-2">
-              💡 <strong>Tip:</strong> Prompt is optional when generating multiple angles from upload. Leave blank to use default photorealistic rendering.
-            </p>
           )}
 
           <button
