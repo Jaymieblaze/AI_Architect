@@ -170,7 +170,7 @@ async function generateMultiAngle(
   
   // Generate sequentially with delays to avoid rate limiting
   for (let index = 0; index < PRESET_ANGLES.length; index++) {
-    const angle = PRESET_ANGLES[index];
+    const angle = PRESET_ANGLES[index]!; // Safe: we're iterating within bounds
     const anglePrompt = `${prompt}, ${angle} view, architectural visualization`;
     const angleSeed = baseSeed + index;
     
