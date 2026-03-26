@@ -35,6 +35,8 @@ export default function ConceptArchitect() {
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [uploadMultiAngle, setUploadMultiAngle] = useState(false);
+  const [uploadAngleType, setUploadAngleType] = useState<'preset' | 'custom'>('preset');
   
   // Single image state
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -126,8 +128,136 @@ export default function ConceptArchitect() {
 
         // Store source image URL for database save
         uploadedImageUrlRef.current = sourceImageUrl;
+        
+        setIsUploading(false);
 
-        // Enhance prompt emphasizing EXACT camera angle/viewpoint preservation
+        // CHECK: Multi-angle from upload?
+        if (uploadMultiAngle) {
+          // Multi-angle generation from uploaded image
+          console.log(`Generating multiple angles from uploaded image (${uploadAngleType} mode)`);
+          
+          // Prepare angle prompts based on type
+          let anglePromptsList: Array<{ angle: string; prompt: string; customLabel?: string }>;
+          
+          if (uploadAngleType === 'custom') {
+            // Custom angles
+            const validAngles = customAngles.filter(a => a.name.trim() && a.description.trim());
+            if (validAngles.length === 0) {
+              setErrorMessage('Please add at least one custom angle with both name and description.');
+              setStatus('idle');
+              return;
+            }
+            anglePromptsList = generateCustomAnglePrompts(prompt, validAngles);
+          } else {
+            // Preset 4 angles
+            const anglePrompts = generateAnglePrompts(prompt);
+            anglePromptsList = ANGLE_TYPES.map(angle => ({
+              angle,
+              prompt: anglePrompts[angle] || '',
+            }));
+          }
+          
+          // Initialize angle images array
+          const initialAngles: AngleImage[] = anglePromptsList.map(({ angle, customLabel }) => ({
+            angle,
+            url: '',
+            job_id: '',
+            status: 'pending' as const,
+            customLabel,
+          }));
+          setAngleImages(initialAngles);
+          
+          // Generate first angle using uploaded image as reference (using Krea with img2img)
+          const firstAngle = anglePromptsList[0]!;
+          const generationSeed = Math.floor(Math.random() * 4294967295);
+          console.log(`Generating ${firstAngle.customLabel || firstAngle.angle} view from uploaded image with seed ${generationSeed}...`);
+          
+          const firstResponse = await fetch('/api/generate-krea', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              user_prompt: firstAngle.prompt,
+              seed: generationSeed,
+              imageUrls: [sourceImageUrl],
+              imagePromptStrengths: [80],
+            }),
+          });
+
+          if (!firstResponse.ok) {
+            const errorText = await firstResponse.text();
+            throw new Error(`First angle generation failed (${firstResponse.status}): ${errorText}`);
+          }
+          
+          const firstRawData = await firstResponse.json();
+          const firstJobId = extractJobId(firstRawData);
+
+          if (!firstJobId) {
+            throw new Error(`No job ID returned for first angle. Received: ${JSON.stringify(firstRawData)}`);
+          }
+
+          angleJobIdsRef.current.set(firstAngle.angle as any, firstJobId);
+          console.log('Waiting for first angle to complete...');
+          
+          // Wait for first angle, then generate others with it as reference
+          const firstAngleUrl = await waitForAngleCompletion(firstAngle.angle as any, firstJobId);
+          
+          if (!firstAngleUrl) {
+            console.warn('First angle failed, generating other angles without reference');
+          }
+          
+          // Generate other angles with first angle as reference
+          const otherAngles = anglePromptsList.slice(1);
+          const otherPromises = otherAngles.map(async ({ angle, prompt, customLabel }) => {
+            try {
+              const requestBody: any = {
+                user_prompt: prompt,
+                seed: generationSeed,
+              };
+              
+              if (firstAngleUrl) {
+                requestBody.imageUrls = [firstAngleUrl];
+                requestBody.imagePromptStrengths = [80];
+                console.log(`Generating ${customLabel || angle} with first angle reference (strength: 80)`);
+              }
+              
+              const response = await fetch('/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody),
+              });
+              
+              if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`${angle} generation failed:`, errorText);
+                throw new Error(`Failed to generate ${angle} view`);
+              }
+              
+              const rawData = await response.json();
+              const job_id = extractJobId(rawData);
+              
+              if (!job_id) {
+                throw new Error(`No job ID for ${angle} view`);
+              }
+              
+              angleJobIdsRef.current.set(angle as any, job_id);
+              pollAngleStatus(angle as any, job_id);
+            } catch (error) {
+              console.error(`Failed to generate ${customLabel || angle}:`, error);
+              setAngleImages(prev => 
+                prev.map(img => 
+                  img.angle === angle 
+                    ? { ...img, status: 'failed' as const }
+                    : img
+                )
+              );
+            }
+          });
+          
+          await Promise.all(otherPromises);
+          return;
+        }
+
+        // Single image from upload (original behavior)
         const enhancedPrompt = `CRITICAL: This is an architectural front elevation view (orthogonal projection). Maintain the EXACT camera angle - straight-on front view only, NO side angles, NO perspective distortion. Keep this as a flat front facade view. Only add photorealistic materials (${prompt}), lighting, and landscaping. Do NOT change to a 3D angled perspective. Keep the same orthogonal front-facing viewpoint as the reference image.`;
         console.log('Enhanced prompt:', enhancedPrompt);
 
@@ -1022,11 +1152,68 @@ export default function ConceptArchitect() {
                   <strong>AI-Enhanced Visualization:</strong> The AI may adjust perspective for visual appeal. For strict architectural accuracy, upload 3D perspective views rather than flat elevations.
                 </div>
               </div>
+              
+              {/* Multi-Angle Generation Option */}
+              {uploadedImageUrl && (
+                <div className="space-y-3 p-4 bg-emerald-900/10 border border-emerald-700/30 rounded-xl">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={uploadMultiAngle}
+                      onChange={(e) => setUploadMultiAngle(e.target.checked)}
+                      className="w-4 h-4 text-emerald-600 bg-neutral-800 border-neutral-600 rounded focus:ring-emerald-500"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-neutral-200">
+                        Generate Multiple Angles from Upload
+                      </div>
+                      <div className="text-xs text-neutral-400 mt-0.5">
+                        Create 4 coherent views (exterior, interior, aerial, detail) or define custom perspectives
+                      </div>
+                    </div>
+                  </label>
+                  
+                  {uploadMultiAngle && (
+                    <div className="mt-3 space-y-3">
+                      {/* Angle Type Selector */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setUploadAngleType('preset')}
+                          className={`flex-1 py-2 px-3 rounded-lg text-sm transition-all ${
+                            uploadAngleType === 'preset'
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                          }`}
+                        >
+                          Preset Angles (4)
+                        </button>
+                        <button
+                          onClick={() => setUploadAngleType('custom')}
+                          className={`flex-1 py-2 px-3 rounded-lg text-sm transition-all ${
+                            uploadAngleType === 'custom'
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                          }`}
+                        >
+                          Custom Angles
+                        </button>
+                      </div>
+                      
+                      {/* Show preset angles info */}
+                      {uploadAngleType === 'preset' && (
+                        <div className="text-xs text-neutral-400 p-2 bg-neutral-900/50 rounded">
+                          Will generate: <span className="text-emerald-400">Exterior</span>, <span className="text-emerald-400">Interior</span>, <span className="text-emerald-400">Aerial</span>, <span className="text-emerald-400">Detail</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Custom Angles Configuration */}
-          {generationMode === 'custom-angles' && (
+          {/* Custom Angles Configuration (for text prompts OR upload multi-angle) */}
+          {((generationMode === 'custom-angles' && !uploadedImageUrl) || (uploadMultiAngle && uploadAngleType === 'custom' && uploadedImageUrl)) && (
             <div className="space-y-3 p-4 bg-neutral-900/50 border border-neutral-700 rounded-xl">
               <div className="flex justify-between items-center">
                 <label className="block text-sm font-medium text-neutral-300">
