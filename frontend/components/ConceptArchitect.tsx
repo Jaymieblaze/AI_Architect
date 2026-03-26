@@ -288,7 +288,7 @@ export default function ConceptArchitect() {
               if (exteriorUrl) {
                 requestBody.imageUrls = [exteriorUrl];
                 // CRITICAL: imagePromptStrengths controls reference adherence (0-100 scale)
-                // 80 = strong adherence (from Krea's official workflow examples)
+                // 80 = strong adherence (Krea's tested value - requires nano-banana model!)
                 requestBody.imagePromptStrengths = [80];
                 console.log(`Generating ${angle} with seed + exterior reference (strength: 80)`);
               }
@@ -1075,14 +1075,17 @@ export default function ConceptArchitect() {
               <div className="mt-4 flex gap-3">
                 <button
                   onClick={() => {
-                    // Download all completed images
-                    angleImages.forEach(img => {
-                      if (img.status === 'completed' && img.url) {
+                    // Download all completed images with delay to avoid browser blocking
+                    const completedImages = angleImages.filter(img => img.status === 'completed' && img.url);
+                    completedImages.forEach((img, index) => {
+                      setTimeout(() => {
                         const link = document.createElement('a');
-                        link.href = img.url;
+                        link.href = img.url!;
                         link.download = `architectural-concept-${img.angle}-${Date.now()}.jpg`;
+                        document.body.appendChild(link);
                         link.click();
-                      }
+                        document.body.removeChild(link);
+                      }, index * 500); // 500ms delay between each download
                     });
                   }}
                   className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-all flex justify-center items-center gap-2"

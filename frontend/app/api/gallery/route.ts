@@ -49,10 +49,14 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as ConceptInsert;
 
-    // Validate required fields
-    if (!body.prompt || !body.image_url || !body.job_id) {
+    // Validate required fields - either single image OR multi-angle
+    const hasPrompt = !!body.prompt;
+    const hasSingleImage = !!(body.image_url && body.job_id);
+    const hasMultiAngle = !!(body.images && Array.isArray(body.images) && body.images.length > 0);
+    
+    if (!hasPrompt || (!hasSingleImage && !hasMultiAngle)) {
       return NextResponse.json<ErrorResponse>(
-        { error: 'Missing required fields: prompt, image_url, job_id' },
+        { error: 'Missing required fields: prompt and (image_url + job_id OR images array)' },
         { status: 400 }
       );
     }
@@ -61,11 +65,17 @@ export async function POST(request: Request) {
 
     const insertData: any = {
       prompt: body.prompt,
-      image_url: body.image_url,
-      job_id: body.job_id,
       status: body.status || 'completed',
       metadata: body.metadata,
     };
+
+    // Add single image fields if present
+    if (body.image_url) {
+      insertData.image_url = body.image_url;
+    }
+    if (body.job_id) {
+      insertData.job_id = body.job_id;
+    }
 
     // Add source_image_url for image-to-render mode
     if (body.source_image_url) {

@@ -100,6 +100,7 @@ export function generateAnglePrompts(userPrompt: string): Record<AngleType, stri
         : `${descriptor.prefix}, ${userPrompt}`;
     } else {
       // Other angles: prefix + reference to same building + DNA
+      // Keep it simple - let imagePromptStrengths do the heavy lifting
       prompts[angle] = dna
         ? `${descriptor.prefix}, same building: ${userPrompt}, ${dna}`
         : `${descriptor.prefix}, same building: ${userPrompt}`;
