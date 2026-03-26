@@ -85,31 +85,57 @@ async function generateSingleImage(
   imageUrls?: string[],
   seed?: number
 ): Promise<string> {
-  const payload: any = {
+  // Build the request body for Krea API
+  const kreaRequestBody: any = {
     prompt,
-    negative_prompt: '',
     width: 1024,
-    height: 1024,
+    height: 576,
   };
 
-  // Add seed if provided
-  if (seed !== undefined) {
-    payload.seed = seed;
+  // Determine endpoint and parameters based on whether img2img is needed
+  let endpoint = 'https://api.krea.ai/generate/image/bfl/flux-1-dev';
+  
+  if (imageUrls && Array.isArray(imageUrls) && imageUrls.length > 0) {
+    // Download image and convert to base64 (Krea requires base64 data URIs)
+    console.log('📥 Downloading image from:', imageUrls[0]);
+    const imageResponse = await fetch(imageUrls[0]);
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to download image: ${imageResponse.status}`);
+    }
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const base64Image = Buffer.from(imageBuffer).toString('base64');
+    const mimeType = imageResponse.headers.get('content-type') || 'image/png';
+    const dataUri = `data:${mimeType};base64,${base64Image}`;
+    
+    console.log(`✅ Image converted to base64 (${Math.round(base64Image.length / 1024)}KB)`);
+    
+    // Use Nano Banana Pro for img2img
+    endpoint = 'https://api.krea.ai/generate/image/google/nano-banana-pro';
+    kreaRequestBody.imageUrls = [dataUri];
+    
+    // imagePromptStrengths controls adherence (0-100 scale)
+    // 80 = strong reference adherence
+    kreaRequestBody.imagePromptStrengths = [80];
+    
+    kreaRequestBody.prompt = `Reference image shows exact building geometry to preserve. ${prompt}`;
+    // Note: Nano Banana Pro doesn't use steps parameter
+  } else {
+    // Use Flux for text-to-image
+    kreaRequestBody.steps = 28;
+    if (seed !== undefined && seed !== null) {
+      kreaRequestBody.seed = seed;
+    }
   }
 
-  // Add image URLs for img2img workflow
-  if (imageUrls && imageUrls.length > 0) {
-    payload.image_url = imageUrls[0]; // KREA uses image_url for img2img
-    payload.strength = 0.7; // Transformation strength
-  }
+  console.log('🔍 KREA API Request to', endpoint);
 
-  const response = await fetch('https://api.krea.ai/v1/images/generate', {
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(kreaRequestBody),
   });
 
   if (!response.ok) {
@@ -119,7 +145,10 @@ async function generateSingleImage(
   }
 
   const data = await response.json();
-  return data.id;
+  console.log('✅ KREA API Response:', JSON.stringify(data, null, 2));
+  
+  // Return the job/image ID from KREA's response
+  return data.id || data.request_id || data.image_id;
 }
 
 /**
