@@ -87,7 +87,10 @@ export default function ConceptArchitect() {
   }, [isAnimating, angleImages.length, animationSpeed]);
 
   const generateConcept = async () => {
-    if (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH) {
+    // For multi-angle from upload, prompt is optional (but helpful for style guidance)
+    const isMultiAngleUpload = generationMode === 'image-to-render' && uploadedImage && uploadMultiAngle;
+    
+    if (!isMultiAngleUpload && (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH)) {
       setErrorMessage(`Please enter at least ${MIN_PROMPT_LENGTH} characters to describe your concept.`);
       return;
     }
@@ -102,13 +105,20 @@ export default function ConceptArchitect() {
       setErrorMessage('Please upload an image to transform.');
       return;
     }
+    
+    // Use default prompt for multi-angle upload if none provided
+    let effectivePrompt = prompt;
+    if (isMultiAngleUpload && (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH)) {
+      effectivePrompt = 'photorealistic architectural rendering with professional lighting and materials';
+      console.log('Using default prompt for multi-angle upload:', effectivePrompt);
+    }
 
     setStatus('generating');
     setImageUrl(null);
     setAngleImages([]);
     setErrorMessage(null);
     retryCountRef.current = 0;
-    currentPromptRef.current = prompt;
+    currentPromptRef.current = effectivePrompt;
     pollStartTimeRef.current = Date.now();
 
     if (generationMode === 'image-to-render') {
@@ -147,10 +157,10 @@ export default function ConceptArchitect() {
               setStatus('idle');
               return;
             }
-            anglePromptsList = generateCustomAnglePrompts(prompt, validAngles);
+            anglePromptsList = generateCustomAnglePrompts(effectivePrompt, validAngles);
           } else {
             // Preset 4 angles
-            const anglePrompts = generateAnglePrompts(prompt);
+            const anglePrompts = generateAnglePrompts(effectivePrompt);
             anglePromptsList = ANGLE_TYPES.map(angle => ({
               angle,
               prompt: anglePrompts[angle] || '',
@@ -1279,7 +1289,9 @@ export default function ConceptArchitect() {
               className="w-full bg-neutral-900/50 border border-neutral-700 rounded-xl p-4 text-neutral-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-none"
               rows={4}
               placeholder={
-                generationMode === 'image-to-render'
+                generationMode === 'image-to-render' && uploadMultiAngle
+                  ? "Optional: Describe rendering style (e.g., luxury materials, warm lighting, modern finishes...)"
+                  : generationMode === 'image-to-render'
                   ? "e.g., Photorealistic render with luxury materials, warm natural lighting, high-end finishes..."
                   : "e.g., A minimalist tropical resort with timber cladding and infinity pools..."
               }
@@ -1292,14 +1304,21 @@ export default function ConceptArchitect() {
               {prompt.length}/{MAX_PROMPT_LENGTH}
             </div>
           </div>
+          
+          {generationMode === 'image-to-render' && uploadMultiAngle && (
+            <p className="text-xs text-neutral-400 -mt-2">
+              💡 <strong>Tip:</strong> Prompt is optional when generating multiple angles from upload. Leave blank to use default photorealistic rendering.
+            </p>
+          )}
 
           <button
             onClick={generateConcept}
             disabled={
               status === 'generating' || 
               isUploading ||
-              !prompt || 
-              prompt.trim().length < MIN_PROMPT_LENGTH ||
+              // Prompt required unless it's multi-angle upload (where it's optional)
+              (!(generationMode === 'image-to-render' && uploadedImage && uploadMultiAngle) && 
+                (!prompt || prompt.trim().length < MIN_PROMPT_LENGTH)) ||
               (generationMode === 'image-to-render' && !uploadedImage)
             }
             className="w-full py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
