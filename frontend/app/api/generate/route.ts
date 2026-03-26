@@ -147,8 +147,8 @@ async function generateSingleImage(
   const data = await response.json();
   console.log('✅ KREA API Response:', JSON.stringify(data, null, 2));
   
-  // Return the job/image ID from KREA's response
-  return data.id || data.request_id || data.image_id;
+  // Return the job_id from KREA's response
+  return data.job_id;
 }
 
 /**
@@ -162,14 +162,22 @@ async function generateMultiAngle(
 ): Promise<Array<{ angle: AngleType; job_id: string }>> {
   const baseSeed = seed || Math.floor(Math.random() * 1000000);
   
-  const jobPromises = PRESET_ANGLES.map(async (angle, index) => {
+  const results: Array<{ angle: AngleType; job_id: string }> = [];
+  
+  // Generate sequentially with delays to avoid rate limiting
+  for (let index = 0; index < PRESET_ANGLES.length; index++) {
+    const angle = PRESET_ANGLES[index];
     const anglePrompt = `${prompt}, ${angle} view, architectural visualization`;
-    const angleSeed = baseSeed + index; // Consistent but varied seeds
+    const angleSeed = baseSeed + index;
     
     const jobId = await generateSingleImage(apiKey, anglePrompt, imageUrls, angleSeed);
+    results.push({ angle, job_id: jobId });
     
-    return { angle, job_id: jobId };
-  });
+    // Add 2 second delay between requests to avoid rate limiting (except after last one)
+    if (index < PRESET_ANGLES.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
 
-  return Promise.all(jobPromises);
+  return results;
 }

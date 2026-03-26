@@ -47,9 +47,16 @@ export async function GET(request: Request) {
 
     const data = await response.json() as KreaJobResponse;
     
+    // Construct image URL when job is completed
+    // KREA stores completed images at: https://app-uploads.krea.ai/public/{job_id}-image.jpeg
+    let imageUrl = data.result?.urls?.[0] || null;
+    if (!imageUrl && data.status === 'completed') {
+      imageUrl = `https://app-uploads.krea.ai/public/${jobId}-image.jpeg`;
+    }
+    
     return NextResponse.json<PollResponse>({
       status: data.status as PollResponse['status'],
-      image_url: data.result?.urls?.[0] || null
+      image_url: imageUrl
     });
     
   } catch (error) {

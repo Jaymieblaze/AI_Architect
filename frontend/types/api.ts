@@ -53,7 +53,9 @@ export interface ErrorResponse {
  * Krea AI job status response
  */
 export interface KreaJobResponse {
-  status: string;
+  status: string; // 'queued' | 'processing' | 'completed' | 'failed'
+  job_id?: string;
+  completed_at?: string | null;
   result?: {
     urls?: string[];
   };
