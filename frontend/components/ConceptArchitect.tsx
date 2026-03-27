@@ -791,9 +791,18 @@ export default function ConceptArchitect() {
 
   const checkAllAnglesComplete = () => {
     setAngleImages(currentAngles => {
+      console.log('🔍 [DEBUG] checkAllAnglesComplete - Current angles:', currentAngles.map(img => ({
+        angle: img.angle,
+        status: img.status,
+        hasUrl: !!img.url,
+        url: img.url?.substring(0, 50) + '...'
+      })));
+      
       const allDone = currentAngles.every(img => 
         img.status === 'completed' || img.status === 'failed'
       );
+      
+      console.log('🔍 [DEBUG] All done?', allDone);
       
       if (allDone) {
         // Clear all remaining intervals
@@ -803,18 +812,23 @@ export default function ConceptArchitect() {
         const anyCompleted = currentAngles.some(img => img.status === 'completed');
         const allCompleted = currentAngles.every(img => img.status === 'completed');
         
+        console.log('🔍 [DEBUG] anyCompleted:', anyCompleted, 'allCompleted:', allCompleted);
+        
         if (allCompleted) {
+          console.log('✅ [DEBUG] Setting status to complete (all succeeded)');
           setStatus('complete');
           // Save multi-angle concept to database
           if (currentPromptRef.current) {
             saveMultiAngleConcept(currentPromptRef.current, currentAngles);
           }
         } else if (anyCompleted) {
+          console.log('⚠️ [DEBUG] Setting status to complete (partial success)');
           setStatus('complete'); // Partial success
           if (currentPromptRef.current) {
             saveMultiAngleConcept(currentPromptRef.current, currentAngles);
           }
         } else {
+          console.log('❌ [DEBUG] All angles failed');
           setStatus('error');
           setErrorMessage('All angles failed. Please try again.');
         }
@@ -1008,6 +1022,10 @@ export default function ConceptArchitect() {
     link.download = `architectural-concept-${Date.now()}.jpg`;
     link.click();
   };
+
+  // Debug render state
+  console.log('🎨 [RENDER] multiAngle:', multiAngle, 'angleImages.length:', angleImages.length, 'status:', status);
+  console.log('🎨 [RENDER] angleImages:', angleImages.map(img => ({ angle: img.angle, status: img.status, hasUrl: !!img.url })));
 
   return (
     <div className="min-h-screen bg-neutral-900 flex items-center justify-center p-3 sm:p-4 md:p-6 font-sans">
